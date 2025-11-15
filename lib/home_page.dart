@@ -33,7 +33,6 @@ class _HomePageState extends State<HomePage>
 
   List<Course> _allCourses = []; // API로 받아온 '전체' 과목 리스트
   Map<String, List<ScheduleItem>> _myTimetable = {}; // '내' 시간표
-  String _searchTerm = ""; // 과목 검색어
 
   @override
   void initState() {
@@ -64,7 +63,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _fetchAllCourses() async {
     try {
       final res = await http.get(
-        Uri.parse("http://34.50.32.200/api/courses/"),
+        Uri.parse("https://34.50.32.200/api/courses/"),
         headers: {"accept": "application/json"},
       );
       if (res.statusCode == 200) {
