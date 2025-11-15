@@ -2,13 +2,14 @@ name: inthon_7_student
 description: "A new Flutter project."
 publish_to: 'none'
 version: 0.1.0
-
 environment:
-  sdk: ^3.5.4
+  sdk: ^3.9.2
 
 dependencies:
   flutter:
     sdk: flutter
+  shadcn_ui: ^0.39.6
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
