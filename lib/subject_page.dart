@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:inthon_7_student/api/course_api.dart';
 import 'package:inthon_7_student/local_db.dart';
+import 'package:inthon_7_student/summary_page.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -211,6 +212,18 @@ class _SubjectPageState extends State<SubjectPage>
       bool updateState = false; // 기존 이벤트를 수정했는지 여부
 
       switch (eventType) {
+        case 'connected':
+          final bool isActive = data['is_active'];
+          final bool teacherOnline = data['teacher_online'];
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!isActive) {
+              _showClassEndedDialog();
+            } else if (!teacherOnline) {
+              _showProfessorNotOnlineDialog();
+            }
+          });
+          break;
         // ... (case 'important', 'hard_alert'는 동일) ...
         case 'important':
           newEvent = ClassEvent(
@@ -294,6 +307,121 @@ class _SubjectPageState extends State<SubjectPage>
       }
     } catch (e) {
       print('웹소켓 메시지 처리 오류: $e');
+    }
+  }
+
+  void _showClassEndedDialog() {
+    showShadDialog(
+      context: context,
+      builder: (context) => ShadDialog(
+        title: const Text("수업 종료"),
+        description: const Text("이미 끝난 수업입니다."),
+        actions: [
+          ShadButton(
+            child: const Text("요약 확인하기"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => SummaryPage(sessionId: currentSessionId),
+                ),
+              );
+            },
+          ),
+          ShadButton.secondary(
+            child: const Text("지난 수업 보기"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _showPreviousSessions();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showProfessorNotOnlineDialog() {
+    showShadDialog(
+      context: context,
+      builder: (context) => ShadDialog(
+        title: const Text("교수님 대기 중"),
+        description: const Text("교수님이 아직 입장하지 않았습니다."),
+        actions: [
+          ShadButton(
+            child: const Text("그냥 입장하기"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Just close the dialog
+            },
+          ),
+          ShadButton.secondary(
+            child: const Text("지난 수업 보기"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _showPreviousSessions();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPreviousSessions() async {
+    try {
+      final res = await http.get(
+        Uri.parse(
+            "http://34.50.32.200/api/courses/${widget.courseCode}/previous-session/"),
+        headers: {"accept": "application/json"},
+      );
+
+      if (res.statusCode == 200) {
+        final List<dynamic> sessions = jsonDecode(utf8.decode(res.bodyBytes));
+        if (!mounted) return;
+
+        showShadDialog(
+          context: context,
+          builder: (context) {
+            return ShadDialog(
+              title: const Text("지난 수업 목록"),
+              description: SizedBox(
+                height: 300,
+                width: double.maxFinite,
+                child: ListView.builder(
+                  itemCount: sessions.length,
+                  itemBuilder: (context, index) {
+                    final session = sessions[index];
+                    final date = session['date'];
+                    final sessionId = session['id'];
+                    return ListTile(
+                      title: Text(date),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                SummaryPage(sessionId: sessionId),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                ShadButton.ghost(
+                  child: const Text("닫기"),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            );
+          },
+        );
+      } else {
+        _showErrorSnackBar(
+            "지난 수업 목록을 불러오는데 실패했습니다 (${res.statusCode})");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar(e.toString());
     }
   }
 

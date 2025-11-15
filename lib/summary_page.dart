@@ -161,9 +161,9 @@ class _SummaryPageState extends State<SummaryPage> {
 
   Future<SummaryData> fetchSummaryData() async {
     // API 연동 시 아래 주석을 해제하고 사용하세요.
-    /*
+    
     final response = await http.get(
-      Uri.parse('/api/sessions/${widget.sessionId}/summary/'),
+      Uri.parse('http://34.50.32.200/api/sessions/${widget.sessionId}/summary/'),
     );
 
     if (response.statusCode == 200) {
@@ -171,11 +171,11 @@ class _SummaryPageState extends State<SummaryPage> {
     } else {
       throw Exception('Failed to load summary data');
     }
-    */
+    
     
     // Mock 데이터를 사용합니다.
-    await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
-    return SummaryData.fromJson(mockJson);
+    // await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
+    // return SummaryData.fromJson(mockJson);
   }
 
   @override
