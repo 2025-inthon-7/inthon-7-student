@@ -15,6 +15,21 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+bool _isTimeOverlap(List<ScheduleItem> existing, int start, int end) {
+  for (final item in existing) {
+    // 기존 item: item.start ~ item.end
+    // 새로운 수업: start ~ end
+
+    // 끝이 한 칸만 붙어도 → 겹침
+    final bool noOverlap = (end + 1 <= item.start) || (start - 1 >= item.end);
+
+    if (!noOverlap) {
+      return true; // 겹침
+    }
+  }
+  return false;
+}
+
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
@@ -35,6 +50,68 @@ class _HomePageState extends State<HomePage>
   Map<String, List<ScheduleItem>> _myTimetable = {}; // '내' 시간표
 
   @override
+  void _addCourseToTimetable(Course course) {
+    if (course.time == "미정") return;
+
+    final timeParts = course.time.split(' ');
+
+    for (final part in timeParts) {
+      try {
+        final day = part.substring(0, 1);
+        final periodsString = part.substring(2, part.length - 1);
+
+        final dayKey = _convertDayToKey(day);
+        if (dayKey == null) continue;
+
+        final (start, end) = _parsePeriods(periodsString);
+
+        final existingItems = _myTimetable[dayKey] ?? [];
+
+        // 🔥 겹침 체크
+        if (_isTimeOverlap(existingItems, start, end)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠ 이미 ${dayKey}요일 ${start}~${end}교시에 수업이 있어요!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return; // ← 추가 중단
+        }
+      } catch (e) {
+        print("시간 파싱 오류: '$part' -> $e");
+      }
+    }
+
+    // 모든 파트 검증 끝 → 추가
+    setState(() {
+      for (final part in timeParts) {
+        final day = part.substring(0, 1);
+        final periodsString = part.substring(2, part.length - 1);
+
+        final dayKey = _convertDayToKey(day);
+        if (dayKey == null) continue;
+
+        final (start, end) = _parsePeriods(periodsString);
+
+        final newItem = ScheduleItem(
+          course.code,
+          course.name,
+          start,
+          end,
+          _getRandomColor(),
+        );
+
+        if (_myTimetable.containsKey(dayKey)) {
+          _myTimetable[dayKey]!.add(newItem);
+        } else {
+          _myTimetable[dayKey] = [newItem];
+        }
+      }
+    });
+
+    LocalDB.saveTimetable(_myTimetable);
+  }
+
   void initState() {
     super.initState();
     _controller = AnimationController(
@@ -215,50 +292,6 @@ class _HomePageState extends State<HomePage>
   // ------------------------------------
   // 9. ✨ (신규) 시간표에 과목 추가 (핵심 로직)
   // ------------------------------------
-  void _addCourseToTimetable(Course course) {
-    // "미정" 과목은 추가하지 않음
-    if (course.time == "미정") return;
-
-    // "화(6) 목(6)" -> ["화(6)", "목(6)"]
-    final timeParts = course.time.split(' ');
-
-    setState(() {
-      for (final part in timeParts) {
-        // part = "화(6)" 또는 "화(1-2)"
-        try {
-          final day = part.substring(0, 1); // "화"
-          final periodsString = part.substring(
-            2,
-            part.length - 1,
-          ); // "6" 또는 "1-2"
-
-          final dayKey = _convertDayToKey(day); // "Tue"
-          if (dayKey == null) continue; // "월~금"이 아니면 무시
-
-          final (start, end) = _parsePeriods(periodsString); // (6, 6) 또는 (1, 2)
-
-          final newItem = ScheduleItem(
-            course.code,
-            course.name,
-            start,
-            end,
-            _getRandomColor(), // 임시 랜덤 색상
-          );
-
-          // myTimetable 맵에 추가
-          if (_myTimetable.containsKey(dayKey)) {
-            _myTimetable[dayKey]!.add(newItem);
-          } else {
-            _myTimetable[dayKey] = [newItem];
-          }
-        } catch (e) {
-          print("시간 파싱 오류: '$part' -> $e");
-          // (파싱 실패 시 무시)
-        }
-      }
-    });
-    LocalDB.saveTimetable(_myTimetable);
-  }
 
   // --- (Helper Functions for Time Parsing) ---
   String? _convertDayToKey(String day) {
@@ -325,83 +358,6 @@ class _HomePageState extends State<HomePage>
   // -------------------------------
   // 🟦 전체 시간표 UI
   // -------------------------------
-  Widget _buildCourseSelector() {
-    final filteredCourses = _allCourses.where((course) {
-      final name = course.name?.toLowerCase() ?? "";
-      final prof = course.professor?.toLowerCase() ?? "";
-      final code = course.code?.toLowerCase() ?? "";
-      final term = _searchTerm.toLowerCase();
-
-      return name.contains(term) || prof.contains(term) || code.contains(term);
-    }).toList();
-
-    return Container(
-      padding: EdgeInsets.all(12),
-      margin: EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
-      ),
-      child: Column(
-        children: [
-          // 🔎 검색창
-          TextField(
-            decoration: InputDecoration(
-              hintText: "과목명, 교수명, 학수번호 검색...",
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) {
-              setState(() {
-                _searchTerm = value;
-              });
-            },
-          ),
-
-          const SizedBox(height: 12),
-
-          // 📜 스크롤 가능한 리스트
-          SizedBox(
-            height: 300,
-            child: _isLoading
-                ? Center(child: CircularProgressIndicator())
-                : // lib/home_page.dart -> _showAddCourseDialog -> itemBuilder
-                  ListView.builder(
-                    itemCount: filteredCourses.length,
-                    itemBuilder: (context, index) {
-                      final course = filteredCourses[index];
-
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: InkWell(
-                          onTap: () {
-                            _addCourseToTimetable(course);
-                            Navigator.pop(context);
-                          },
-                          child: SizedBox(
-                            height: 80,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center, // 중앙 정렬
-                              children: [
-                                Text(course.name),
-                                Text(
-                                  "${course.professor} / ${course.time}",
-                                  style: ShadTheme.of(context).textTheme.muted,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildTimetable(BuildContext context) {
     return Padding(
