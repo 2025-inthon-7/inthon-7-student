@@ -230,15 +230,14 @@ class _SubjectPageState extends State<SubjectPage>
           break;
 
         case 'new_question':
-          final qid = data['id'];
-          final capture = pendingCaptures[qid];
+          final qid = data['question_id'];
 
           newEvent = ClassEvent(
-            id: data['id'], // 👈 1. 이 줄이 있는지 확인
+            id: data['question_id'], // 👈 1. 이 줄이 있는지 확인
             type: 'question',
             timestamp: DateTime.parse(data['created_at']),
             message: data['cleaned_text'],
-            imageUrl: data['capture_url'] ?? capture, // ← 여기
+            imageUrl: data['capture_url'], // ← 여기
           );
 
           // ❗ 사용된 pending 데이터 삭제
@@ -645,9 +644,8 @@ class _SubjectPageState extends State<SubjectPage>
     );
   }
 
-  // lib/subject_page.dart (파일 맨 아래)
-  // lib/subject_page.dart
-  // lib/subject_page.dart
+  List<int> likedQuestions = [];
+
   Widget _eventCard(ClassEvent e) {
     log(e.id.toString());
     return GestureDetector(
@@ -680,42 +678,30 @@ class _SubjectPageState extends State<SubjectPage>
 
                   // 공감 버튼 (id만 있으면 항상 표시)
                   if (e.id != null)
-                    GestureDetector(
-                      onTap: () {
-                        sendQuestionLike(
-                          e.id!,
-                          _showSuccessSnackBar,
-                          _showErrorSnackBar,
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Icon(
-                          Icons.thumb_up_alt_outlined,
-                          size: 16,
-                          color: Colors.white.withOpacity(0.7),
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: ShadIconButton(
+                        onPressed: () async {
+                          if (likedQuestions.contains(e.id!)) {
+                            _showErrorSnackBar("이미 공감한 질문입니다.");
+                            return;
+                          }
+                          final res = await sendQuestionLike(
+                            e.id!,
+                            _showSuccessSnackBar,
+                            _showErrorSnackBar,
+                          );
+                          if (res) {
+                            setState(() {
+                              likedQuestions.add(e.id!);
+                            });
+                          }
+                        },
+                        icon: Icon(Icons.thumb_up),
                       ),
                     ),
                 ],
               ),
-            ),
-
-            // ---- 이미지 아이콘 ----
-            if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Icon(
-                  Icons.photo_library_outlined,
-                  size: 16,
-                  color: Colors.white.withOpacity(0.6),
-                ),
-              ),
-
-            // ---- 삭제 아이콘 ----
-            GestureDetector(
-              onTap: () => _deleteEvent(e),
-              child: const Icon(Icons.close, size: 14),
             ),
           ],
         ),
@@ -724,7 +710,7 @@ class _SubjectPageState extends State<SubjectPage>
   }
 
   // 6. 💥 [추가] "질문 공감" (Like) API 함수
-  Future<void> sendQuestionLike(
+  Future<bool> sendQuestionLike(
     int questionId,
     void Function(String) showSuccess,
     void Function(String) showError,
@@ -744,18 +730,19 @@ class _SubjectPageState extends State<SubjectPage>
       if (res.statusCode == 200) {
         print("✅ '나도 궁금해요' 전송 성공");
         showSuccess("질문에 공감했습니다!"); // 사용자에게 피드백
-        return;
+        return true;
       }
       if (res.statusCode == 429) {
         print("⚠️ '나도 궁금해요' 너무 자주 보냄 (무시)");
         showError("너무 자주 공감할 수 없습니다.");
-        return;
+        return false;
       }
       throw "공감 전송 실패 (${res.statusCode})";
     } catch (e) {
       print("⛔ '나도 궁금해요' 전송 오류: $e");
       showError(e.toString()); // 사용자에게 오류 피드백
     }
+    return false;
   }
 
   // ----------------------------
