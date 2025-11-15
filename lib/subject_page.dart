@@ -920,6 +920,7 @@ class _SubjectPageState extends State<SubjectPage>
           newCleanedText,
           deviceHash ?? "anonymous",
         );
+        likedQuestions.add(questionId);
         if (!mounted) return;
         _showSuccessSnackBar("질문을 성공적으로 보냈습니다.");
       }
