@@ -32,6 +32,7 @@ bool _isTimeOverlap(List<ScheduleItem> existing, int start, int end) {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   late AnimationController _controller;
   late Animation<Offset> _slide;
   late Animation<double> _fade;
@@ -69,7 +70,7 @@ class _HomePageState extends State<HomePage>
 
         // 🔥 겹침 체크
         if (_isTimeOverlap(existingItems, start, end)) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(_scaffoldKey.currentContext!).showSnackBar(
             SnackBar(
               content: Text("⚠ 이미 ${dayKey}요일 ${start}~${end}교시에 수업이 있어요!"),
               backgroundColor: Colors.red,
@@ -112,6 +113,45 @@ class _HomePageState extends State<HomePage>
     LocalDB.saveTimetable(_myTimetable);
   }
 
+  // ------------------------------------
+  // ✨ (신규) 과목 삭제 관련 로직
+  // ------------------------------------
+  void _removeCourseFromTimetable(String courseCode) {
+    setState(() {
+      _myTimetable.forEach((day, scheduleItems) {
+        scheduleItems.removeWhere((item) => item.courseCode == courseCode);
+      });
+    });
+    LocalDB.saveTimetable(_myTimetable);
+  }
+
+  void _showDeleteDialog(ScheduleItem item) {
+    showShadDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('과목 삭제'),
+        content: Text("'${item.title}' 과목을 삭제하시겠습니까?"),
+        actions: [
+          TextButton(
+            child: const Text('취소'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+          TextButton(
+            child: Text('삭제', style: TextStyle(color: Colors.red.shade400)),
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _removeCourseFromTimetable(item.courseCode);
+              ScaffoldMessenger.of(_scaffoldKey.currentContext!).showSnackBar(
+                const SnackBar(content: Text("🗑️ 과목이 삭제되었습니다.")),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     _controller = AnimationController(
@@ -334,6 +374,7 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         title: Text("MY 시간표", style: ShadTheme.of(context).textTheme.h3),
       ),
@@ -344,7 +385,6 @@ class _HomePageState extends State<HomePage>
         onPressed: _showAddCourseDialog, // 👈 과목 추가 다이얼로그 열기
         child: const Icon(Icons.add, color: Colors.white), // 👈 아이콘 변경
       ),
-
       body: FadeTransition(
         opacity: _fade,
         child: SlideTransition(
@@ -447,6 +487,7 @@ class _HomePageState extends State<HomePage>
                                 index: idx,
                                 child: GestureDetector(
                                   onTap: () => _openSubject(item, context),
+                                  onLongPress: () => _showDeleteDialog(item),
                                   child: Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(

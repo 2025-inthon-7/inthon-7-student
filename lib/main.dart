@@ -20,7 +20,22 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.light,
         colorScheme: const ShadZincColorScheme.light(),
       ),
-      home: const HomePage(), // ← ★ 시작 화면을 HomePage로 설정
+      home: Builder(builder: (context) {
+        final shadTheme = ShadTheme.of(context);
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            scaffoldBackgroundColor: shadTheme.colorScheme.background,
+            appBarTheme: AppBarTheme(
+              backgroundColor: shadTheme.colorScheme.background,
+              foregroundColor: shadTheme.colorScheme.foreground,
+              elevation: 0,
+            ),
+            brightness: shadTheme.brightness,
+          ),
+          home: const HomePage(),
+        );
+      }), // ← ★ 시작 화면을 HomePage로 설정
     );
   }
 }
