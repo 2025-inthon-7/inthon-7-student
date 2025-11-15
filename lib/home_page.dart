@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:inthon_7_student/model/course.dart'; // 1. 방금 만든 모델 import
-import 'package:inthon_7_student/summary_page.dart';
+import 'package:inthon_7_student/summary_page.dart' hide Course;
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'subject_page.dart';
 import 'dart:convert';
@@ -141,9 +141,9 @@ class _HomePageState extends State<HomePage>
             onPressed: () {
               Navigator.of(dialogContext).pop();
               _removeCourseFromTimetable(item.courseCode);
-              ScaffoldMessenger.of(_scaffoldKey.currentContext!).showSnackBar(
-                const SnackBar(content: Text("🗑️ 과목이 삭제되었습니다.")),
-              );
+              ScaffoldMessenger.of(
+                _scaffoldKey.currentContext!,
+              ).showSnackBar(const SnackBar(content: Text("🗑️ 과목이 삭제되었습니다.")));
             },
           ),
         ],
