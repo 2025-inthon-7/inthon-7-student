@@ -92,6 +92,7 @@ class _SubjectPageState extends State<SubjectPage>
         });
 
         print("세션 ID 로드됨: $currentSessionId");
+        _initWebSocket(currentSessionId);
       } else {
         print("세션 로드 실패: ${res.statusCode}");
       }
@@ -119,6 +120,7 @@ class _SubjectPageState extends State<SubjectPage>
 
   @override
   void dispose() {
+    channel.sink.close();
     _fadeController.dispose();
     super.dispose();
   }
@@ -127,31 +129,25 @@ class _SubjectPageState extends State<SubjectPage>
   // 이벤트 추가 함수
   // ----------------------------
   void _addEvent(String type) async {
-    setState(() {
-      localEvents.add(ClassEvent(type: type, timestamp: DateTime.now()));
-    });
-
     if (currentSessionId.isEmpty) {
-      ScaffoldMessenger.of(_scaffoldContext).showSnackBar(
-        SnackBar(
-          content: Text("세션 정보를 아직 불러오지 못했어요."),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorSnackBar("세션 정보를 아직 불러오지 못했어요.");
       return;
     }
 
     try {
       final feedbackType = (type == "understand") ? "OK" : "HARD";
-      await sendFeedback(currentSessionId, feedbackType);
+      final success = await sendFeedback(currentSessionId, feedbackType);
 
-      ScaffoldMessenger.of(_scaffoldContext).showSnackBar(
-        SnackBar(content: Text("서버에 전송되었습니다!"), backgroundColor: Colors.green),
-      );
+      if (success) {
+        if (!mounted) return;
+        setState(() {
+          localEvents.add(ClassEvent(type: type, timestamp: DateTime.now()));
+        });
+        _showSuccessSnackBar("서버에 전송되었습니다!");
+      }
     } catch (e) {
-      ScaffoldMessenger.of(_scaffoldContext).showSnackBar(
-        SnackBar(content: Text("전송 실패: $e"), backgroundColor: Colors.red),
-      );
+      if (!mounted) return;
+      _showErrorSnackBar("전송 실패: $e");
     }
   }
 
@@ -163,6 +159,115 @@ class _SubjectPageState extends State<SubjectPage>
         break;
       }
     }
+  }
+
+  // ----------------------------
+  // 웹소켓 관련
+  // ----------------------------
+  void _initWebSocket(String sessionId) {
+    final url = 'ws://34.50.32.200/ws/session/$sessionId/student/';
+    try {
+      channel = WebSocketChannel.connect(Uri.parse(url));
+
+      channel.stream.listen(
+        (message) {
+          _handleWebSocketMessage(message);
+        },
+        onError: (error) {
+          print('웹소켓 오류: $error');
+          if (mounted) {
+            _showErrorSnackBar("웹소켓 연결 오류: $error");
+          }
+        },
+        onDone: () {
+          print('웹소켓 연결 종료');
+        },
+      );
+    } catch (e) {
+      print('웹소켓 연결 설정 오류: $e');
+      if (mounted) {
+        _showErrorSnackBar("웹소켓 설정 오류: $e");
+      }
+    }
+  }
+
+  void _handleWebSocketMessage(String message) {
+    if (!mounted) return;
+
+    try {
+      final data = jsonDecode(message);
+      final eventType = data['event'];
+
+      print("WebSocket 수신: $data");
+
+      ClassEvent? newEvent;
+
+      switch (eventType) {
+        case 'important':
+          newEvent = ClassEvent(
+            type: 'important',
+            timestamp: DateTime.parse(data['created_at']),
+            message: data['note'],
+            imageUrl: data['capture_url'],
+          );
+          break;
+        case 'hard_alert':
+          newEvent = ClassEvent(
+            type: 'hard_alert',
+            timestamp: DateTime.parse(data['created_at']),
+            message: "많은 학생들이 어려워하고 있어요.",
+            imageUrl: data['capture_url'],
+          );
+          break;
+        case 'new_question':
+          newEvent = ClassEvent(
+            type: 'question',
+            timestamp: DateTime.parse(data['created_at']),
+            message: data['cleaned_text'],
+            imageUrl: data['capture_url'],
+          );
+          break;
+        case 'session_ended':
+          Navigator.of(context).pop();
+          break;
+      }
+
+      if (newEvent != null) {
+        setState(() {
+          localEvents.add(newEvent!);
+        });
+      }
+    } catch (e) {
+      print('웹소켓 메시지 처리 오류: $e');
+    }
+  }
+
+  void _showImageDialog(String imageUrl) {
+    showShadDialog(
+      context: context,
+      builder: (context) => ShadDialog(
+        title: const Text("캡처된 강의자료"),
+        description: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Image.network(
+            imageUrl,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return const Center(child: CircularProgressIndicator());
+            },
+            errorBuilder: (context, error, stackTrace) {
+              return const Center(child: Text("이미지를 불러올 수 없습니다."));
+            },
+          ),
+        ),
+        actions: [
+          ShadButton.ghost(
+            child: const Text("닫기"),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -196,8 +301,13 @@ class _SubjectPageState extends State<SubjectPage>
         return "학생: 어려워요";
       case "question":
         return "질문: ${event.message}";
+      case "hard_alert":
+        return "주의: ${event.message}";
       case "important":
-        return "교수님 알림: ${event.message}";
+        if (event.message != null && event.message!.isNotEmpty) {
+          return "중요 포인트: ${event.message}";
+        }
+        return "중요 포인트입니다! 집중하세요!";
       default:
         return event.message ?? "";
     }
@@ -387,34 +497,58 @@ class _SubjectPageState extends State<SubjectPage>
 
                                         // 카드
                                         Expanded(
-                                          child: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              color: Colors.white.withOpacity(
-                                                0.06,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              if (e.imageUrl != null &&
+                                                  e.imageUrl!.isNotEmpty) {
+                                                _showImageDialog(e.imageUrl!);
+                                              }
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                color: Colors.white.withOpacity(
+                                                  0.06,
+                                                ),
                                               ),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    _eventMessage(e),
-                                                    style: ShadTheme.of(
-                                                      context,
-                                                    ).textTheme.p,
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      _eventMessage(e),
+                                                      style: ShadTheme.of(
+                                                        context,
+                                                      ).textTheme.p,
+                                                    ),
                                                   ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                GestureDetector(
-                                                  onTap: () => _deleteEvent(e),
-                                                  child: const Icon(
-                                                    Icons.close,
-                                                    size: 14,
+                                                  if (e.imageUrl != null &&
+                                                      e.imageUrl!.isNotEmpty)
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                          ),
+                                                      child: Icon(
+                                                        Icons
+                                                            .photo_library_outlined,
+                                                        size: 16,
+                                                        color: Colors.white
+                                                            .withOpacity(0.6),
+                                                      ),
+                                                    ),
+                                                  const SizedBox(width: 6),
+                                                  GestureDetector(
+                                                    onTap: () =>
+                                                        _deleteEvent(e),
+                                                    child: const Icon(
+                                                      Icons.close,
+                                                      size: 14,
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -460,44 +594,26 @@ class _SubjectPageState extends State<SubjectPage>
               const SizedBox(height: 20),
               Row(
                 children: [
-                  SizedBox(
-                    width: 140,
+                  Expanded(
                     child: ShadButton(
                       child: const Text("질문 보내기"),
                       onPressed: _startQuestionProcess,
                     ),
                   ),
-
                   const SizedBox(width: 12),
-                  Builder(
-                    builder: (context) => Row(
-                      children: [
-                        SizedBox(
-                          width: 140,
-                          child: ShadButton(
-                            child: const Text("수업 종료"),
-                            onPressed: () async {
-                              try {
-                                await _fetchSummary();
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("수업 Summary가 저장되었습니다!"),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text("Summary 저장 실패: $e"),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                        ),
-                      ],
+                  Expanded(
+                    child: ShadButton(
+                      child: const Text("수업 종료"),
+                      onPressed: () async {
+                        try {
+                          await _fetchSummary();
+                          if (!mounted) return;
+                          _showSuccessSnackBar("수업 Summary가 저장되었습니다!");
+                        } catch (e) {
+                          if (!mounted) return;
+                          _showErrorSnackBar("Summary 저장 실패: $e");
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -529,7 +645,9 @@ class _SubjectPageState extends State<SubjectPage>
   Future<void> _startQuestionProcess() async {
     try {
       final questionId = await CourseAPI.postQuestionIntent(
-          currentSessionId, deviceHash ?? "anonymous");
+        currentSessionId,
+        deviceHash ?? "anonymous",
+      );
 
       if (!mounted) return;
 
@@ -612,7 +730,10 @@ class _SubjectPageState extends State<SubjectPage>
           result['text'] != null &&
           result['text'].isNotEmpty) {
         await _handleQuestionSubmission(
-            questionId, result['text'], result['noCapture'] ?? false);
+          questionId,
+          result['text'],
+          result['noCapture'] ?? false,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -621,11 +742,17 @@ class _SubjectPageState extends State<SubjectPage>
   }
 
   Future<void> _handleQuestionSubmission(
-      int questionId, String originalQuestion, bool noCapture) async {
+    int questionId,
+    String originalQuestion,
+    bool noCapture,
+  ) async {
     try {
       final result = await CourseAPI.postQuestionText(
-          questionId, originalQuestion, deviceHash ?? "anonymous",
-          noCapture: noCapture);
+        questionId,
+        originalQuestion,
+        deviceHash ?? "anonymous",
+        noCapture: noCapture,
+      );
 
       final originalText = result['original_text'];
       final cleanedText = result['cleaned_text'];
@@ -642,16 +769,17 @@ class _SubjectPageState extends State<SubjectPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text("원래 질문:",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  "원래 질문:",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 Text(originalText),
                 const SizedBox(height: 16),
-                const Text("정리된 질문 (수정 가능):",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                ShadInput(
-                  controller: cleanController,
-                  maxLines: 5,
+                const Text(
+                  "정리된 질문 (수정 가능):",
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
+                ShadInput(controller: cleanController, maxLines: 5),
               ],
             ),
             actions: [
@@ -668,7 +796,10 @@ class _SubjectPageState extends State<SubjectPage>
 
       if (newCleanedText != null) {
         await CourseAPI.postQuestionForward(
-            questionId, newCleanedText, deviceHash ?? "anonymous");
+          questionId,
+          newCleanedText,
+          deviceHash ?? "anonymous",
+        );
         if (!mounted) return;
         _showSuccessSnackBar("질문을 성공적으로 보냈습니다.");
       }
@@ -700,7 +831,7 @@ class _SubjectPageState extends State<SubjectPage>
   }
 }
 
-Future<void> sendFeedback(String sessionId, String type) async {
+Future<bool> sendFeedback(String sessionId, String type) async {
   try {
     final res = await http.post(
       Uri.parse("http://34.50.32.200/api/sessions/$sessionId/feedback/"),
@@ -712,7 +843,7 @@ Future<void> sendFeedback(String sessionId, String type) async {
       body: jsonEncode({"feedback_type": type}), // OK 또는 HARD
     );
 
-    if (res.statusCode == 200) return;
+    if (res.statusCode == 200) return true;
 
     // 오류 처리
     if (res.statusCode == 400) {
@@ -720,7 +851,7 @@ Future<void> sendFeedback(String sessionId, String type) async {
     } else if (res.statusCode == 403) {
       throw "이 디바이스는 허가되지 않았어요 (Forbidden).";
     } else if (res.statusCode == 429) {
-      throw "너무 자주 전송하고 있어요! 잠시 후 다시 시도하세요.";
+      return false; // 429는 무시
     } else {
       throw "알 수 없는 오류 (${res.statusCode})";
     }
@@ -735,6 +866,8 @@ Widget _eventEmoji(ClassEvent e) {
       return const Text("✅", style: TextStyle(fontSize: 18));
     case "hard":
       return const Text("⚠️", style: TextStyle(fontSize: 18));
+    case "hard_alert":
+      return const Text("🚨", style: TextStyle(fontSize: 18));
     case "question":
       return const Text("❓", style: TextStyle(fontSize: 18));
     case "important":
