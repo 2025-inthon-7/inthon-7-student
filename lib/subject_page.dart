@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:inthon_7_student/api/course_api.dart';
 import 'package:inthon_7_student/local_db.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -463,7 +464,7 @@ class _SubjectPageState extends State<SubjectPage>
                     width: 140,
                     child: ShadButton(
                       child: const Text("질문 보내기"),
-                      onPressed: () => _openQuestionDialog(context),
+                      onPressed: _startQuestionProcess,
                     ),
                   ),
 
@@ -525,26 +526,175 @@ class _SubjectPageState extends State<SubjectPage>
     }
   }
 
-  void _openQuestionDialog(BuildContext context) {
-    final controller = TextEditingController();
+  Future<void> _startQuestionProcess() async {
+    try {
+      final questionId = await CourseAPI.postQuestionIntent(
+          currentSessionId, deviceHash ?? "anonymous");
 
-    showShadDialog(
-      context: context,
-      builder: (context) => ShadDialog(
-        title: const Text("질문 보내기"),
-        description: ShadInput(
-          placeholder: const Text("질문 내용을 입력하세요"),
-          controller: controller,
-        ),
-        actions: [
-          ShadButton(
-            child: const Text("보내기"),
-            onPressed: () {
-              //  _addEvent("question", msg: controller.text);
-              Navigator.pop(context);
+      if (!mounted) return;
+
+      final result = await showShadDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) {
+          final controller = TextEditingController();
+          bool noCapture = false;
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return ShadDialog(
+                title: const Text("질문 보내기"),
+                description: ShadInput(
+                  placeholder: const Text("질문 내용을 입력하세요"),
+                  controller: controller,
+                  maxLines: 5,
+                ),
+                actions: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth < 640) {
+                        // Narrow layout
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            ShadCheckbox(
+                              label: const Text('강의자료 미포함'),
+                              value: noCapture,
+                              onChanged: (value) {
+                                setState(() => noCapture = value);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            ShadButton(
+                              child: const Text("질문 정리하기"),
+                              onPressed: () {
+                                Navigator.pop(context, {
+                                  'text': controller.text,
+                                  'noCapture': noCapture,
+                                });
+                              },
+                            ),
+                          ],
+                        );
+                      } else {
+                        // Wide layout
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            ShadCheckbox(
+                              label: const Text('강의자료 미포함'),
+                              value: noCapture,
+                              onChanged: (value) {
+                                setState(() => noCapture = value);
+                              },
+                            ),
+                            const SizedBox(width: 16),
+                            ShadButton(
+                              child: const Text("질문 정리하기"),
+                              onPressed: () {
+                                Navigator.pop(context, {
+                                  'text': controller.text,
+                                  'noCapture': noCapture,
+                                });
+                              },
+                            ),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ],
+              );
             },
-          ),
-        ],
+          );
+        },
+      );
+
+      if (result != null &&
+          result['text'] != null &&
+          result['text'].isNotEmpty) {
+        await _handleQuestionSubmission(
+            questionId, result['text'], result['noCapture'] ?? false);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar("질문 시작 실패: $e");
+    }
+  }
+
+  Future<void> _handleQuestionSubmission(
+      int questionId, String originalQuestion, bool noCapture) async {
+    try {
+      final result = await CourseAPI.postQuestionText(
+          questionId, originalQuestion, deviceHash ?? "anonymous",
+          noCapture: noCapture);
+
+      final originalText = result['original_text'];
+      final cleanedText = result['cleaned_text'];
+
+      if (!mounted) return;
+
+      final newCleanedText = await showShadDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          final cleanController = TextEditingController(text: cleanedText);
+          return ShadDialog(
+            title: const Text("질문 정리"),
+            description: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("원래 질문:",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(originalText),
+                const SizedBox(height: 16),
+                const Text("정리된 질문 (수정 가능):",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                ShadInput(
+                  controller: cleanController,
+                  maxLines: 5,
+                ),
+              ],
+            ),
+            actions: [
+              ShadButton(
+                child: const Text("최종 질문 보내기"),
+                onPressed: () {
+                  Navigator.pop(dialogContext, cleanController.text);
+                },
+              ),
+            ],
+          );
+        },
+      );
+
+      if (newCleanedText != null) {
+        await CourseAPI.postQuestionForward(
+            questionId, newCleanedText, deviceHash ?? "anonymous");
+        if (!mounted) return;
+        _showSuccessSnackBar("질문을 성공적으로 보냈습니다.");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar("질문 처리 실패: $e");
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    if (!mounted) return;
+    ShadToaster.of(_scaffoldContext).show(
+      ShadToast(
+        title: const Text('성공'),
+        description: Text(message),
+        backgroundColor: Colors.green.withOpacity(0.9),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ShadToaster.of(_scaffoldContext).show(
+      ShadToast.destructive(
+        title: const Text('오류 발생'),
+        description: Text(message),
       ),
     );
   }
