@@ -52,9 +52,23 @@ class _HomePageState extends State<HomePage>
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
     _controller.forward();
+    _loadLocalTimetable();
 
     // 6. ✨ initState에서 API 호출
     _fetchAllCourses();
+  }
+
+  Future<void> _loadLocalTimetable() async {
+    // 💥 [수정] LocalDB.loadTimetable()이 null을 반환할 경우,
+    //    ?? 연산자를 사용해 빈 맵({})으로 초기화합니다.
+    final loaded = await LocalDB.loadTimetable() ?? {};
+
+    if (mounted) {
+      setState(() {
+        _myTimetable = loaded;
+      });
+      print("✅ '내 시간표' 로컬 DB에서 로드 완료");
+    }
   }
 
   // ------------------------------------
@@ -63,7 +77,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _fetchAllCourses() async {
     try {
       final res = await http.get(
-        Uri.parse("https://34.50.32.200/api/courses/"),
+        Uri.parse("http://34.50.32.200/api/courses/"),
         headers: {"accept": "application/json"},
       );
       if (res.statusCode == 200) {
@@ -126,7 +140,7 @@ class _HomePageState extends State<HomePage>
                         print("input: $value");
                       },
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: _isLoading
                           ? const Center(child: CircularProgressIndicator())
@@ -134,23 +148,43 @@ class _HomePageState extends State<HomePage>
                               itemCount: filteredCourses.length,
                               itemBuilder: (context, index) {
                                 final course = filteredCourses[index];
-                                return ShadButton(
-                                  onPressed: () {
+                                return InkWell(
+                                  onTap: () {
                                     _addCourseToTimetable(course);
-                                    Navigator.pop(context); // 다이얼로그 닫기
+                                    Navigator.pop(context);
                                   },
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
+                                  child: Container(
+                                    width: double.infinity, // ← 양옆 꽉!
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: ShadTheme.of(
+                                        context,
+                                      ).colorScheme.foreground,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment
+                                          .start, // ← 왼쪽 정렬 추천
                                       children: [
-                                        Text(course.name),
+                                        Text(
+                                          course.name,
+                                          style: TextStyle(
+                                            color: ShadTheme.of(
+                                              context,
+                                            ).colorScheme.background,
+                                          ),
+                                        ),
                                         Text(
                                           "${course.professor} / ${course.time}",
-                                          style: ShadTheme.of(
-                                            context,
-                                          ).textTheme.muted,
+                                          style: TextStyle(
+                                            color: ShadTheme.of(context)
+                                                .colorScheme
+                                                .background
+                                                .withOpacity(0.7),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -223,6 +257,7 @@ class _HomePageState extends State<HomePage>
         }
       }
     });
+    LocalDB.saveTimetable(_myTimetable);
   }
 
   // --- (Helper Functions for Time Parsing) ---
@@ -330,25 +365,33 @@ class _HomePageState extends State<HomePage>
             height: 300,
             child: _isLoading
                 ? Center(child: CircularProgressIndicator())
-                : ListView.builder(
+                : // lib/home_page.dart -> _showAddCourseDialog -> itemBuilder
+                  ListView.builder(
                     itemCount: filteredCourses.length,
                     itemBuilder: (context, index) {
                       final course = filteredCourses[index];
-                      return ShadButton(
-                        onPressed: () {
-                          _addCourseToTimetable(course);
-                        },
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(course.name),
-                              Text(
-                                "${course.professor} / ${course.time}",
-                                style: ShadTheme.of(context).textTheme.muted,
-                              ),
-                            ],
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: InkWell(
+                          onTap: () {
+                            _addCourseToTimetable(course);
+                            Navigator.pop(context);
+                          },
+                          child: SizedBox(
+                            height: 80,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.center, // 중앙 정렬
+                              children: [
+                                Text(course.name),
+                                Text(
+                                  "${course.professor} / ${course.time}",
+                                  style: ShadTheme.of(context).textTheme.muted,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -518,8 +561,30 @@ class ScheduleItem {
   final Color? color;
 
   ScheduleItem(this.courseCode, this.title, this.start, this.end, this.color);
+
+  // 💥 [추가] JSON 저장을 위한 toJson
+  Map<String, dynamic> toJson() => {
+    'courseCode': courseCode,
+    'title': title,
+    'start': start,
+    'end': end,
+    'color': color?.value, // Color는 int(정수) 값으로 저장
+  };
+
+  // 💥 [추가] JSON 로딩을 위한 fromJson
+  factory ScheduleItem.fromJson(Map<String, dynamic> json) => ScheduleItem(
+    json['courseCode'],
+    json['title'],
+    json['start'],
+    json['end'],
+    json['color'] != null
+        ? Color(json['color']) // int(정수)를 다시 Color로 복원
+        : Colors.blue, // 기본값
+  );
 }
 
+// ... (AnimatedSubjectCard 코드는 변경 없음)
+// ... (AnimatedSubjectCard 코드는 변경 없음)
 // --------------------------------
 // 14. 💥 (수정) 애니메이션 카드 (StatefulWidget으로 변경)
 // --------------------------------
