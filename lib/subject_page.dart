@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:typed_data';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:inthon_7_student/api/course_api.dart';
@@ -14,19 +16,23 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 // currentSessionId is initialized to an empty string and can be updated when a session is created/selected.
 String? deviceHash;
 String currentSessionId = "";
+Map<int, String> pendingCaptures = {};
 
 // ----------------------------
 // 데이터 모델
 // ----------------------------
+// lib/subject_page.dart (파일 상단)
 
 class ClassEvent {
-  final String type; // "understand", "hard", "question", "important"
+  final int? id; // 👈 1. [추가] 질문 ID (questionId)를 저장하기 위해 추가
+  final String type;
   final DateTime timestamp;
   final String? message;
   final String? imageUrl;
   final Uint8List? imageBytes;
 
   ClassEvent({
+    this.id, // 👈 2. [추가] 생성자에 추가
     required this.type,
     required this.timestamp,
     this.message,
@@ -190,6 +196,7 @@ class _SubjectPageState extends State<SubjectPage>
       }
     }
   }
+  // lib/subject_page.dart
 
   void _handleWebSocketMessage(String message) {
     if (!mounted) return;
@@ -200,9 +207,11 @@ class _SubjectPageState extends State<SubjectPage>
 
       print("WebSocket 수신: $data");
 
-      ClassEvent? newEvent;
+      ClassEvent? newEvent; // 새로 추가할 이벤트
+      bool updateState = false; // 기존 이벤트를 수정했는지 여부
 
       switch (eventType) {
+        // ... (case 'important', 'hard_alert'는 동일) ...
         case 'important':
           newEvent = ClassEvent(
             type: 'important',
@@ -219,22 +228,69 @@ class _SubjectPageState extends State<SubjectPage>
             imageUrl: data['capture_url'],
           );
           break;
+
         case 'new_question':
+          final qid = data['id'];
+          final capture = pendingCaptures[qid];
+
           newEvent = ClassEvent(
+            id: data['id'], // 👈 1. 이 줄이 있는지 확인
             type: 'question',
             timestamp: DateTime.parse(data['created_at']),
             message: data['cleaned_text'],
-            imageUrl: data['capture_url'],
+            imageUrl: data['capture_url'] ?? capture, // ← 여기
           );
+
+          // ❗ 사용된 pending 데이터 삭제
+          pendingCaptures.remove(qid);
+
           break;
+        // 4. 💥 [추가] 'question_capture' 이벤트 처리
+        case 'question_capture':
+          final int questionId = data['question_id'];
+          final String captureUrl = data['capture_url'];
+
+          // localEvents 리스트에서 일치하는 id를 가진 질문을 찾습니다.
+          final int index = localEvents.indexWhere(
+            (event) => event.id == questionId,
+          );
+
+          if (index != -1) {
+            final oldEvent = localEvents[index];
+            final updatedEvent = ClassEvent(
+              id: oldEvent.id,
+              type: oldEvent.type,
+              timestamp: oldEvent.timestamp,
+              message: oldEvent.message,
+              imageUrl: captureUrl,
+            );
+            localEvents[index] = updatedEvent;
+            updateState = true;
+          } else {
+            final updatedEvent = ClassEvent(
+              id: questionId,
+              type: 'question',
+              timestamp: DateTime.parse(data['created_at']),
+              message: "",
+              imageUrl: captureUrl,
+            );
+            localEvents[index] = updatedEvent;
+            updateState = true;
+          }
+
+          break;
+
         case 'session_ended':
           Navigator.of(context).pop();
           break;
       }
 
-      if (newEvent != null) {
+      // 5. 💥 [수정] 새 이벤트가 있거나, 기존 이벤트가 업데이트되었으면 setState 호출
+      if (newEvent != null || updateState) {
         setState(() {
-          localEvents.add(newEvent!);
+          if (newEvent != null) {
+            localEvents.add(newEvent);
+          }
         });
       }
     } catch (e) {
@@ -249,15 +305,17 @@ class _SubjectPageState extends State<SubjectPage>
         title: const Text("캡처된 강의자료"),
         description: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Image.network(
-            imageUrl,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return const Center(child: CircularProgressIndicator());
-            },
-            errorBuilder: (context, error, stackTrace) {
-              return const Center(child: Text("이미지를 불러올 수 없습니다."));
-            },
+          child: SizedBox(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+
+                errorWidget: (context, error, stackTrace) {
+                  return const Center(child: Text("이미지를 불러올 수 없습니다."));
+                },
+              ),
+            ),
           ),
         ),
         actions: [
@@ -300,9 +358,16 @@ class _SubjectPageState extends State<SubjectPage>
       case "hard":
         return "학생: 어려워요";
       case "question":
-        return "질문: ${event.message}";
+        if (event.message != null && event.message!.isNotEmpty) {
+          return "질문 : ${event.message}";
+        }
+        return "어려운 부분이에요 ㅠㅠ. 모두 어려워요:";
       case "hard_alert":
-        return "주의: ${event.message}";
+        if (event.message != null && event.message!.isNotEmpty) {
+          return "모두가 어려워해요: ${event.message}";
+        }
+        return "어려운 부분이에요 ㅠㅠ. 힘내봐요! :";
+
       case "important":
         if (event.message != null && event.message!.isNotEmpty) {
           return "중요 포인트: ${event.message}";
@@ -504,52 +569,7 @@ class _SubjectPageState extends State<SubjectPage>
                                                 _showImageDialog(e.imageUrl!);
                                               }
                                             },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(6),
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                                color: Colors.white.withOpacity(
-                                                  0.06,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      _eventMessage(e),
-                                                      style: ShadTheme.of(
-                                                        context,
-                                                      ).textTheme.p,
-                                                    ),
-                                                  ),
-                                                  if (e.imageUrl != null &&
-                                                      e.imageUrl!.isNotEmpty)
-                                                    Padding(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                          ),
-                                                      child: Icon(
-                                                        Icons
-                                                            .photo_library_outlined,
-                                                        size: 16,
-                                                        color: Colors.white
-                                                            .withOpacity(0.6),
-                                                      ),
-                                                    ),
-                                                  const SizedBox(width: 6),
-                                                  GestureDetector(
-                                                    onTap: () =>
-                                                        _deleteEvent(e),
-                                                    child: const Icon(
-                                                      Icons.close,
-                                                      size: 14,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
+                                            child: _eventCard(e),
                                           ),
                                         ),
                                       ],
@@ -623,6 +643,119 @@ class _SubjectPageState extends State<SubjectPage>
         ),
       ],
     );
+  }
+
+  // lib/subject_page.dart (파일 맨 아래)
+  // lib/subject_page.dart
+  // lib/subject_page.dart
+  Widget _eventCard(ClassEvent e) {
+    log(e.id.toString());
+    return GestureDetector(
+      onTap: () {
+        if (e.imageUrl != null && e.imageUrl!.isNotEmpty) {
+          _showImageDialog(e.imageUrl!);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          color: Colors.white.withOpacity(0.06),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // ---- 텍스트 + 공감버튼 ----
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 메시지
+                  Expanded(
+                    child: Text(
+                      _eventMessage(e),
+                      style: ShadTheme.of(context).textTheme.p,
+                    ),
+                  ),
+
+                  // 공감 버튼 (id만 있으면 항상 표시)
+                  if (e.id != null)
+                    GestureDetector(
+                      onTap: () {
+                        sendQuestionLike(
+                          e.id!,
+                          _showSuccessSnackBar,
+                          _showErrorSnackBar,
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Icon(
+                          Icons.thumb_up_alt_outlined,
+                          size: 16,
+                          color: Colors.white.withOpacity(0.7),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ---- 이미지 아이콘 ----
+            if (e.imageUrl != null && e.imageUrl!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.photo_library_outlined,
+                  size: 16,
+                  color: Colors.white.withOpacity(0.6),
+                ),
+              ),
+
+            // ---- 삭제 아이콘 ----
+            GestureDetector(
+              onTap: () => _deleteEvent(e),
+              child: const Icon(Icons.close, size: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 6. 💥 [추가] "질문 공감" (Like) API 함수
+  Future<void> sendQuestionLike(
+    int questionId,
+    void Function(String) showSuccess,
+    void Function(String) showError,
+  ) async {
+    // 서버가 10회가 넘으면 알아서 hard_alert를 띄워줄 것입니다.
+    try {
+      final res = await http.post(
+        Uri.parse("http://34.50.32.200/api/questions/$questionId/like/"),
+        headers: {
+          "Content-Type": "application/json",
+          "accept": "application/json",
+          "X-Device-Hash": deviceHash ?? "anonymous",
+        },
+        body: jsonEncode({}), // body는 비어있음
+      );
+
+      if (res.statusCode == 200) {
+        print("✅ '나도 궁금해요' 전송 성공");
+        showSuccess("질문에 공감했습니다!"); // 사용자에게 피드백
+        return;
+      }
+      if (res.statusCode == 429) {
+        print("⚠️ '나도 궁금해요' 너무 자주 보냄 (무시)");
+        showError("너무 자주 공감할 수 없습니다.");
+        return;
+      }
+      throw "공감 전송 실패 (${res.statusCode})";
+    } catch (e) {
+      print("⛔ '나도 궁금해요' 전송 오류: $e");
+      showError(e.toString()); // 사용자에게 오류 피드백
+    }
   }
 
   // ----------------------------
@@ -859,13 +992,16 @@ Future<bool> sendFeedback(String sessionId, String type) async {
     rethrow;
   }
 }
+// lib/subject_page.dart (파일 맨 아래)
 
 Widget _eventEmoji(ClassEvent e) {
   switch (e.type) {
     case "understand":
-      return const Text("✅", style: TextStyle(fontSize: 18));
+      // 💥 [수정] Text("✅") 대신 Icon 사용
+      return const Icon(Icons.check_circle, color: Colors.green, size: 18);
     case "hard":
-      return const Text("⚠️", style: TextStyle(fontSize: 18));
+      // 💥 [수정] Text("⚠️") 대신 Icon 사용
+      return const Icon(Icons.warning, color: Colors.orange, size: 18);
     case "hard_alert":
       return const Text("🚨", style: TextStyle(fontSize: 18));
     case "question":
