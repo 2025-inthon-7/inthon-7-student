@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:inthon_7_student/local_db.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 // ----------------------------
 // 데이터 모델
@@ -55,6 +58,8 @@ class SubjectPage extends StatefulWidget {
 class _SubjectPageState extends State<SubjectPage>
     with SingleTickerProviderStateMixin {
   late List<ClassEvent> localEvents;
+  late WebSocketChannel channel;
+
   double timelineHeight = 40; // 초기 높이
   late AnimationController _fadeController;
 
@@ -67,6 +72,10 @@ class _SubjectPageState extends State<SubjectPage>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
+    Timer.periodic(Duration(seconds: 30), (t) {
+      if (!mounted) t.cancel();
+      _checkSessionEnd();
+    });
   }
 
   @override
@@ -78,7 +87,7 @@ class _SubjectPageState extends State<SubjectPage>
   // ----------------------------
   // 이벤트 추가 함수
   // ----------------------------
-  void _addEvent(String type, {String? msg}) {
+  Future<void> _addEvent(String type, {String? msg}) async {
     final newEvent = ClassEvent(
       type: type,
       timestamp: DateTime.now(),
@@ -89,8 +98,20 @@ class _SubjectPageState extends State<SubjectPage>
       localEvents.add(newEvent);
       timelineHeight += 40; // 이벤트 하나당 세로축 높이 증가
     });
-
+    if (type == "important") {
+      await _fetchSummary();
+    }
     // TODO: 서버 연결 시 여기에 추가
+  }
+
+  void _checkSessionEnd() {
+    final now = DateTime.now();
+    for (final s in widget.sessions) {
+      if (now.isAfter(s.end)) {
+        _fetchSummary(); // 시간이 끝나서 자동 summary
+        break;
+      }
+    }
   }
 
   @override
@@ -115,227 +136,293 @@ class _SubjectPageState extends State<SubjectPage>
           widget.subjectName,
           style: ShadTheme.of(context).textTheme.h3,
         ),
+        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 과목명
-            ShadBadge(
-              child: Text(
-                widget.subjectName,
-                style: TextStyle(
-                  color: widget.color,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+
+      // -----------------------------
+      // 전체 화면 Stack
+      // -----------------------------
+      body: Stack(
+        children: [
+          // 1) 오른쪽 아래 배경 이미지
+          Positioned(
+            right: -150,
+            bottom: -150,
+            child: Opacity(
+              opacity: 0.35,
+              child: Image.asset("assets/나작교.png", width: 500),
             ),
+          ),
 
-            const SizedBox(height: 16),
-
-            // 수업 시간 표시
-            ...sessionWidgets,
-            const SizedBox(height: 20),
-
-            // 👍 이해했어요 / 어려워요 버튼
-            Row(
+          // 2) 본문 내용
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: ShadButton(
-                    child: const Text("이해했어요"),
-                    onPressed: () => _addEvent("understand"),
+                // 과목명
+                ShadBadge(
+                  backgroundColor: widget.color.withOpacity(0.15),
+                  child: Text(
+                    widget.subjectName,
+                    style: TextStyle(
+                      color: widget.color,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ShadButton.secondary(
-                    child: const Text("어려워요"),
-                    onPressed: () => _addEvent("hard"),
-                  ),
+
+                const SizedBox(height: 16),
+
+                // 수업 시간
+                ...sessionWidgets,
+                const SizedBox(height: 20),
+
+                // 버튼
+                Row(
+                  children: [
+                    Expanded(
+                      child: ShadButton(
+                        child: const Text("이해했어요"),
+                        onPressed: () => _addEvent("understand"),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ShadButton.secondary(
+                        child: const Text("어려워요"),
+                        onPressed: () => _addEvent("hard"),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 30),
 
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Colors.white.withOpacity(0.15), // ✨ 은은한 정보대 감성 라인
-            ),
+                const SizedBox(height: 30),
 
-            // ------------------------
-            // 타임라인 (이벤트 표시)
-            // ------------------------
-            // ------------------------
-            // 연오 버전: 이어지는 ‘긴 세로 연대표’
-            // ------------------------
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // 1) 마지막 가지 위치
-                  final double lastBranchY = sortedEvents.isNotEmpty
-                      ? 40 + (sortedEvents.length - 1) * 90
-                      : 40;
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.white.withOpacity(0.15),
+                ),
 
-                  // 2) 세로줄은 가지까지만
-                  final double timelineLineHeight = lastBranchY + 20;
+                const SizedBox(height: 20),
 
-                  // 3) 전체 컨테이너 높이는 → 카드까지 포함해서 더 크게
-                  final double containerHeight = timelineLineHeight + 200;
-                  // 200은 카드 아래 여유공간 (필요시 조정)
+                // -----------------------------
+                // 타임라인 (Expanded)
+                // -----------------------------
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // 마지막 가지 위치 계산
+                      final double lastBranchY = sortedEvents.isNotEmpty
+                          ? 40 + (sortedEvents.length - 1) * 90
+                          : 40;
 
-                  return SingleChildScrollView(
-                    child: SizedBox(
-                      height: containerHeight,
-                      child: Stack(
-                        children: [
-                          // 🔵 세로줄
-                          Positioned(
-                            top: 0,
-                            left: 60,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 600),
-                              curve: Curves.easeOutCubic,
-                              width: 4,
-                              height: timelineLineHeight,
-                              decoration: BoxDecoration(
-                                color: widget.color.withOpacity(0.5),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
+                      final double lineHeight = lastBranchY + 20;
+                      final double containerHeight = lineHeight + 200;
 
-                          // 🔵 이벤트 목록
-                          ...List.generate(sortedEvents.length, (i) {
-                            final e = sortedEvents[i];
-                            final double y = 40 + i * 90;
-
-                            final bool shouldShow = timelineLineHeight >= y;
-
-                            return Positioned(
-                              top: y,
-                              left: 0,
-                              right: 0,
-                              child: AnimatedOpacity(
-                                duration: const Duration(milliseconds: 350),
-                                opacity: shouldShow ? 1 : 0,
-                                curve: Curves.easeOut,
-
-                                child: AnimatedSlide(
-                                  duration: const Duration(milliseconds: 350),
+                      return SingleChildScrollView(
+                        child: SizedBox(
+                          height: containerHeight,
+                          child: Stack(
+                            children: [
+                              // 세로줄
+                              Positioned(
+                                top: 0,
+                                left: 60,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 600),
                                   curve: Curves.easeOutCubic,
-                                  offset: shouldShow
-                                      ? Offset.zero
-                                      : const Offset(0, 0.2),
+                                  width: 4,
+                                  height: lineHeight,
+                                  decoration: BoxDecoration(
+                                    color: widget.color.withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              ),
 
-                                  // 📌 이벤트 Row 전체가 동시에 fade + slide
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      // 시간
-                                      SizedBox(
-                                        width: 55,
-                                        child: Text(
-                                          DateFormat(
-                                            'HH:mm',
-                                          ).format(e.timestamp),
-                                          style: ShadTheme.of(
-                                            context,
-                                          ).textTheme.small,
-                                        ),
+                              // 이벤트 카드들
+                              ...List.generate(sortedEvents.length, (i) {
+                                final e = sortedEvents[i];
+                                final double y = 40.0 + i * 90.0;
+
+                                final shouldShow = lineHeight >= y;
+
+                                return Positioned(
+                                  top: y,
+                                  left: 0,
+                                  right: 0,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 350),
+                                    opacity: shouldShow ? 1 : 0,
+                                    curve: Curves.easeOut,
+                                    child: AnimatedSlide(
+                                      duration: const Duration(
+                                        milliseconds: 350,
                                       ),
+                                      curve: Curves.easeOutCubic,
+                                      offset: shouldShow
+                                          ? Offset.zero
+                                          : const Offset(0, 0.2),
 
-                                      const SizedBox(width: 9),
-
-                                      // 가로 가지 ───
-                                      Container(
-                                        width: 20,
-                                        height: 2,
-                                        color: widget.color.withOpacity(0.7),
-                                      ),
-
-                                      const SizedBox(width: 6),
-
-                                      // 이모지
-                                      _eventEmoji(e),
-
-                                      const SizedBox(width: 12),
-
-                                      // 카드
-                                      Expanded(
-                                        child: Container(
-                                          padding: const EdgeInsets.all(6),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                            color: Colors.white.withOpacity(
-                                              0.06,
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          // 시간
+                                          SizedBox(
+                                            width: 55,
+                                            child: Text(
+                                              DateFormat(
+                                                'HH:mm',
+                                              ).format(e.timestamp),
+                                              style: ShadTheme.of(
+                                                context,
+                                              ).textTheme.small,
                                             ),
                                           ),
-                                          child: Text(
-                                            _eventMessage(e),
-                                            style: ShadTheme.of(
-                                              context,
-                                            ).textTheme.p,
-                                          ),
-                                        ),
-                                      ),
 
-                                      GestureDetector(
-                                        onTap: () => _deleteEvent(e),
-                                        child: const Icon(
-                                          Icons.close,
-                                          size: 14,
-                                        ),
+                                          const SizedBox(width: 9),
+
+                                          // 가지
+                                          Container(
+                                            width: 20,
+                                            height: 2,
+                                            color: widget.color.withOpacity(
+                                              0.7,
+                                            ),
+                                          ),
+
+                                          const SizedBox(width: 6),
+
+                                          // 이모지
+                                          _eventEmoji(e),
+
+                                          const SizedBox(width: 12),
+
+                                          // 카드
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                color: Colors.white.withOpacity(
+                                                  0.06,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      _eventMessage(e),
+                                                      style: ShadTheme.of(
+                                                        context,
+                                                      ).textTheme.p,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  GestureDetector(
+                                                    onTap: () =>
+                                                        _deleteEvent(e),
+                                                    child: const Icon(
+                                                      Icons.close,
+                                                      size: 14,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+
+                              // 빛나는 이모지 끝부분
+                              AnimatedPositioned(
+                                duration: const Duration(milliseconds: 600),
+                                curve: Curves.easeOutCubic,
+                                left: 61.5 - 12,
+                                top: lineHeight - 12,
+                                child: Text(
+                                  "🌟",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    shadows: [
+                                      Shadow(
+                                        color: widget.color.withOpacity(0.8),
+                                        blurRadius: 15,
                                       ),
                                     ],
                                   ),
                                 ),
                               ),
-                            );
-                          }),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
 
-                          AnimatedPositioned(
-                            duration: const Duration(milliseconds: 600),
-                            curve: Curves.easeOutCubic,
-                            left: 63 - 12, // 세로줄 중앙 정렬
-                            top: timelineLineHeight - 12, // 세로줄 길이에 딱 붙임
-                            child: Text(
-                              "🌟",
-                              style: TextStyle(
-                                fontSize: 20,
-                                shadows: [
-                                  Shadow(
-                                    color: widget.color.withOpacity(0.8),
-                                    blurRadius: 15,
-                                  ),
-                                ],
-                              ),
+                const SizedBox(height: 20),
+
+                // -----------------------------
+                // 질문 보내기 버튼
+                // -----------------------------
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 140,
+                      child: ShadButton(
+                        child: const Text("질문 보내기"),
+                        onPressed: () => _openQuestionDialog(context),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+                    Builder(
+                      builder: (context) => Row(
+                        children: [
+                          SizedBox(
+                            width: 140,
+                            child: ShadButton(
+                              child: const Text("수업 종료"),
+                              onPressed: () async {
+                                try {
+                                  await _fetchSummary();
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("수업 Summary가 저장되었습니다!"),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text("Summary 저장 실패: $e"),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
                             ),
                           ),
                         ],
                       ),
                     ),
-                  );
-                },
-              ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-
-            // 질문 보내기 버튼
-            Positioned(
-              left: 0,
-              bottom: 10,
-              child: ShadButton(
-                child: const Text("질문 보내기"),
-                onPressed: () => _openQuestionDialog(context),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -414,24 +501,29 @@ class _SubjectPageState extends State<SubjectPage>
     );
   }
 
-  Widget _eventEmoji(ClassEvent e) {
-    switch (e.type) {
-      case "understand":
-        return const Text("✅", style: TextStyle(fontSize: 18));
-      case "hard":
-        return const Text("⚠️", style: TextStyle(fontSize: 18));
-      case "question":
-        return const Text("❓", style: TextStyle(fontSize: 18));
-      case "important":
-        return const Text("⭐", style: TextStyle(fontSize: 18));
-      default:
-        return const Text("○", style: TextStyle(fontSize: 18));
-    }
-  }
-
   // ----------------------------
   // 질문 dialog
   // ----------------------------
+
+  void _onImportant(Map json) async {
+    final list = await LocalDB.loadSummary(widget.subjectName);
+    list.add(json["note"]);
+    await LocalDB.saveSummary(widget.subjectName, list);
+  }
+
+  Future<void> _fetchSummary() async {
+    try {
+      // 실제 summary API 호출
+      final summaryItems = ["📅 날짜: 2025-11-15", "⭐ 중요 포인트들"];
+
+      // 저장
+      await LocalDB.saveSummary(widget.subjectName, summaryItems);
+    } catch (e) {
+      // 🔥 여기서 에러 다시 바깥으로 던짐
+      throw Exception("Summary 요청 실패: $e");
+    }
+  }
+
   void _openQuestionDialog(BuildContext context) {
     final controller = TextEditingController();
 
@@ -454,5 +546,20 @@ class _SubjectPageState extends State<SubjectPage>
         ],
       ),
     );
+  }
+}
+
+Widget _eventEmoji(ClassEvent e) {
+  switch (e.type) {
+    case "understand":
+      return const Text("✅", style: TextStyle(fontSize: 18));
+    case "hard":
+      return const Text("⚠️", style: TextStyle(fontSize: 18));
+    case "question":
+      return const Text("❓", style: TextStyle(fontSize: 18));
+    case "important":
+      return const Text("⭐", style: TextStyle(fontSize: 18));
+    default:
+      return const Text("○", style: TextStyle(fontSize: 18));
   }
 }

@@ -1,0 +1,841 @@
+openapi: 3.0.3
+info:
+  title: InThon API
+  version: 1.0.0
+  description: API documentation for InThon lecture service
+paths:
+  /api/courses/:
+    get:
+      operationId: api_courses_list
+      description: 과목 리스트 조회
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Course'
+          description: ''
+  /api/courses/{course_code}/today-session/:
+    get:
+      operationId: api_courses_today_session_retrieve
+      description: |-
+        교수/학생 공통: 오늘 세션 가져오기 (없으면 생성)
+
+        Path parameters:
+        - `code` (string): 과목 코드, 예: "CS101"
+      parameters:
+      - in: path
+        name: course_code
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          description: ''
+  /api/questions/{question_id}/ai-answer/:
+    post:
+      operationId: api_questions_ai_answer_create
+      description: |-
+        학생: 정제된 질문(또는 수정본)에 대해 AI 답변 요청.
+
+        body (optional):
+          - override_cleaned_text: string (학생이 수정한 clean 버전 반영하고 싶을 때)
+
+        Path parameters:
+        - `id` (integer): Question ID
+
+        Headers:
+        - `X-Device-Hash` (string, optional)
+      parameters:
+      - in: path
+        name: question_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AIAnswerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AIAnswerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AIAnswerRequest'
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIAnswerResponse'
+          description: ''
+        '403':
+          description: Invalid device.
+  /api/questions/{question_id}/capture/:
+    post:
+      operationId: api_questions_capture_create
+      description: |-
+        교수: question_intent를 받고 PPT 화면을 캡처해서 업로드.
+
+        multipart/form-data:
+          - screenshot (필수)
+
+        Path parameters:
+        - `id` (integer): Question ID
+
+        Request body (multipart/form-data):
+        - `screenshot` (file, required): PPT 캡처 이미지
+      parameters:
+      - in: path
+        name: question_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionCaptureResponse'
+          description: ''
+  /api/questions/{question_id}/forward/:
+    post:
+      operationId: api_questions_forward_create
+      description: |-
+        학생: 현재 상태의 질문(원문/정제/AI답변 + 캡처)을 교수에게 전달.
+
+        Path parameters:
+        - `id` (integer): Question ID
+
+        Request body:
+        - 없음
+      parameters:
+      - in: path
+        name: question_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleStatusResponse'
+          description: ''
+  /api/questions/{question_id}/text/:
+    post:
+      operationId: api_questions_text_create
+      description: |-
+        학생: 질문 텍스트 제출 + clean만 수행.
+
+        body:
+          - original_text
+
+        Path parameters:
+        - `id` (integer): Question ID
+
+        Headers:
+        - `X-Device-Hash` (string, optional)
+      parameters:
+      - in: path
+        name: question_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionTextSubmit'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/QuestionTextSubmit'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/QuestionTextSubmit'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionTextResponse'
+          description: ''
+        '400':
+          description: original_text is required.
+        '403':
+          description: Invalid device.
+  /api/schema/:
+    get:
+      operationId: api_schema_retrieve
+      description: |-
+        OpenApi3 schema for this API. Format can be selected via content negotiation.
+
+        - YAML: application/vnd.oai.openapi
+        - JSON: application/vnd.oai.openapi+json
+      parameters:
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - json
+          - yaml
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - af
+          - ar
+          - ar-dz
+          - ast
+          - az
+          - be
+          - bg
+          - bn
+          - br
+          - bs
+          - ca
+          - ckb
+          - cs
+          - cy
+          - da
+          - de
+          - dsb
+          - el
+          - en
+          - en-au
+          - en-gb
+          - eo
+          - es
+          - es-ar
+          - es-co
+          - es-mx
+          - es-ni
+          - es-ve
+          - et
+          - eu
+          - fa
+          - fi
+          - fr
+          - fy
+          - ga
+          - gd
+          - gl
+          - he
+          - hi
+          - hr
+          - hsb
+          - hu
+          - hy
+          - ia
+          - id
+          - ig
+          - io
+          - is
+          - it
+          - ja
+          - ka
+          - kab
+          - kk
+          - km
+          - kn
+          - ko
+          - ky
+          - lb
+          - lt
+          - lv
+          - mk
+          - ml
+          - mn
+          - mr
+          - ms
+          - my
+          - nb
+          - ne
+          - nl
+          - nn
+          - os
+          - pa
+          - pl
+          - pt
+          - pt-br
+          - ro
+          - ru
+          - sk
+          - sl
+          - sq
+          - sr
+          - sr-latn
+          - sv
+          - sw
+          - ta
+          - te
+          - tg
+          - th
+          - tk
+          - tr
+          - tt
+          - udm
+          - ug
+          - uk
+          - ur
+          - uz
+          - vi
+          - zh-hans
+          - zh-hant
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/vnd.oai.openapi:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/yaml:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/vnd.oai.openapi+json:
+              schema:
+                type: object
+                additionalProperties: {}
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/sessions/{session_id}/feedback/:
+    post:
+      operationId: api_sessions_feedback_create
+      description: |-
+        학생: OK/HARD 피드백
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+
+        Headers:
+        - `X-Device-Hash` (string, optional): 익명 디바이스 ID (없으면 "anonymous")
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackSubmit'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FeedbackSubmit'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FeedbackSubmit'
+        required: true
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleStatusResponse'
+          description: ''
+        '400':
+          description: Invalid feedback_type
+        '403':
+          description: Invalid device.
+        '429':
+          description: Too many requests.
+  /api/sessions/{session_id}/hard-threshold-capture/:
+    post:
+      operationId: api_sessions_hard_threshold_capture_create
+      description: |-
+        교수(프론트): HARD가 threshold 넘었다고 판단했을 때
+
+        multipart/form-data:
+          - screenshot (필수)
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+
+        Request body (multipart/form-data):
+        - `screenshot` (file, required): PPT 캡처 이미지
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HardThresholdCaptureResponse'
+          description: ''
+  /api/sessions/{session_id}/important/:
+    post:
+      operationId: api_sessions_important_create
+      description: |-
+        교수: '중요해요' + PPT 캡쳐
+
+        multipart/form-data:
+          - note (optional)
+          - screenshot (optional)
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+
+        Request body (multipart/form-data):
+        - `note` (string, optional): 메모, 예: "중요 개념"
+        - `screenshot` (file, optional): PPT 캡처 이미지
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionCaptureResponse'
+          description: ''
+  /api/sessions/{session_id}/questions/:
+    get:
+      operationId: api_sessions_questions_list
+      description: |-
+        교수: 세션 질문 목록
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+
+        Query parameters:
+        - `forwarded_only` (string, optional): "true" 인 경우 교수에게 전달된 질문만
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Question'
+          description: ''
+  /api/sessions/{session_id}/questions/intent/:
+    post:
+      operationId: api_sessions_questions_intent_create
+      description: |-
+        학생: '질문하기' 버튼 눌렀을 때 호출.
+        아직 질문 내용을 모르고, '질문 하나 시작'만 알리는 단계.
+
+        - Question 레코드를 미리 만들고(original_text는 일단 빈 문자열)
+        - 교수 쪽 teacher WebSocket 그룹에 question_intent 이벤트 전송
+        - 응답으로 question_id를 돌려줌 → 학생/교수 둘 다 이 ID로 이후 API를 호출
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+
+        Headers:
+        - `X-Device-Hash` (string, optional)
+
+        Request body:
+        - 없음
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionIntentResponse'
+          description: ''
+  /api/sessions/{session_id}/summary/:
+    get:
+      operationId: api_sessions_summary_retrieve
+      description: |-
+        수업 Summary
+
+        Path parameters:
+        - `id` (integer): 세션 ID
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - basicAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionSummary'
+          description: ''
+components:
+  schemas:
+    AIAnswerRequest:
+      type: object
+      properties:
+        override_cleaned_text:
+          type: string
+    AIAnswerResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        cleaned_text:
+          type: string
+        ai_answer:
+          type: string
+        capture_url:
+          type: string
+          nullable: true
+      required:
+      - ai_answer
+      - capture_url
+      - cleaned_text
+      - id
+    Course:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 100
+        professor:
+          type: string
+          maxLength: 100
+        time:
+          type: string
+          maxLength: 100
+      required:
+      - code
+      - id
+      - name
+      - professor
+      - time
+    FeedbackSubmit:
+      type: object
+      properties:
+        feedback_type:
+          $ref: '#/components/schemas/FeedbackTypeEnum'
+      required:
+      - feedback_type
+    FeedbackTypeEnum:
+      enum:
+      - OK
+      - HARD
+      type: string
+      description: |-
+        * `OK` - OK
+        * `HARD` - HARD
+    HardThresholdCaptureResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        capture_url:
+          type: string
+        hard_ratio:
+          type: string
+          nullable: true
+      required:
+      - capture_url
+      - hard_ratio
+      - id
+    Question:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        session:
+          type: string
+          format: uuid
+          readOnly: true
+        device_hash:
+          type: string
+          readOnly: true
+        original_text:
+          type: string
+        cleaned_text:
+          type: string
+        ai_answer:
+          type: string
+          readOnly: true
+        forwarded_to_professor:
+          type: boolean
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - ai_answer
+      - created_at
+      - device_hash
+      - forwarded_to_professor
+      - id
+      - original_text
+      - session
+      - status
+      - updated_at
+    QuestionCaptureResponse:
+      type: object
+      properties:
+        question_id:
+          type: integer
+        capture_url:
+          type: string
+      required:
+      - capture_url
+      - question_id
+    QuestionIntentResponse:
+      type: object
+      properties:
+        question_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - created_at
+      - question_id
+    QuestionTextResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        original_text:
+          type: string
+        cleaned_text:
+          type: string
+        capture_url:
+          type: string
+          nullable: true
+      required:
+      - capture_url
+      - cleaned_text
+      - id
+      - original_text
+    QuestionTextSubmit:
+      type: object
+      properties:
+        original_text:
+          type: string
+      required:
+      - original_text
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        course:
+          allOf:
+          - $ref: '#/components/schemas/Course'
+          readOnly: true
+        date:
+          type: string
+          format: date
+        is_active:
+          type: boolean
+      required:
+      - course
+      - date
+      - id
+    SessionSummary:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        course:
+          type: object
+          additionalProperties: {}
+        duration_minutes:
+          type: integer
+        feedback:
+          type: object
+          additionalProperties: {}
+        question_count:
+          type: integer
+        important_moments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionSummaryMoment'
+      required:
+      - course
+      - date
+      - duration_minutes
+      - feedback
+      - important_moments
+      - question_count
+    SessionSummaryMoment:
+      type: object
+      properties:
+        id:
+          type: integer
+        trigger:
+          type: string
+        note:
+          type: string
+        capture_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        question_id:
+          type: integer
+          nullable: true
+      required:
+      - capture_url
+      - created_at
+      - id
+      - note
+      - question_id
+      - trigger
+    SimpleStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    StatusEnum:
+      enum:
+      - INTENT
+      - TEXT_SUBMITTED
+      - AI_ANSWERED
+      - FORWARDED
+      type: string
+      description: |-
+        * `INTENT` - Intent created
+        * `TEXT_SUBMITTED` - Text submitted & cleaned
+        * `AI_ANSWERED` - AI answered
+        * `FORWARDED` - Forwarded to professor
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid

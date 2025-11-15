@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:inthon_7_student/summary_page.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'subject_page.dart';
 
@@ -20,14 +21,13 @@ class _HomePageState extends State<HomePage>
   /// ――― 시간표 더미 ―――
   final Map<String, List<ScheduleItem>> timetable = {
     "Mon": [
-      ScheduleItem("AI개론", 3, 4, Colors.orange.shade700.withOpacity(0.4)),
+      ScheduleItem("AI개론", 3, 3, Colors.orange.shade700.withOpacity(0.4)),
       ScheduleItem("계산이론", 4, 4, Colors.blue.shade700.withOpacity(0.3)),
       ScheduleItem("학문세계의탐구II", 5, 5, Colors.yellow.shade700.withOpacity(0.3)),
       ScheduleItem("캣독 스터디", 7, 8, Colors.lightBlue.shade700.withOpacity(0.3)),
     ],
     "Tue": [
-      ScheduleItem("AI개론", 3, 3, Colors.orange.shade700.withOpacity(0.4)),
-      ScheduleItem("프리니스&헬스", 3, 4, Colors.green.shade700.withOpacity(0.3)),
+      ScheduleItem("프리니스&헬스", 4, 4, Colors.green.shade700.withOpacity(0.3)),
     ],
     "Wed": [
       ScheduleItem("인공지능", 3, 3, Colors.orange.shade700.withOpacity(0.4)),
@@ -82,6 +82,21 @@ class _HomePageState extends State<HomePage>
       appBar: AppBar(
         title: Text("MY 시간표", style: ShadTheme.of(context).textTheme.h3),
       ),
+
+      // 🔽 요 아래 줄 추가
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.black87,
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SummaryPage()),
+          );
+        },
+
+        child: const Text("📑", style: TextStyle(fontSize: 28)),
+      ),
+
+      // 🔽 여기까지
       body: FadeTransition(
         opacity: _fade,
         child: SlideTransition(
