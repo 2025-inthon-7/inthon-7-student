@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.dark,
         colorScheme: const ShadZincColorScheme.dark(),
       ),
-      home: HomePage(), // ← ★ 시작 화면을 HomePage로 설정
+      home: const HomePage(), // ← ★ 시작 화면을 HomePage로 설정
     );
   }
 }
