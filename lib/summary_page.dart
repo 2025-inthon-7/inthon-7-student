@@ -38,7 +38,7 @@ class ImportantMoment {
   final int id;
   final String trigger;
   final String note;
-  final String captureUrl;
+  final String? captureUrl;
   final DateTime createdAt;
   final int? questionId;
   final bool isHardest;
@@ -47,7 +47,7 @@ class ImportantMoment {
     required this.id,
     required this.trigger,
     required this.note,
-    required this.captureUrl,
+    this.captureUrl,
     required this.createdAt,
     this.questionId,
     required this.isHardest,
@@ -163,7 +163,7 @@ class _SummaryPageState extends State<SummaryPage> {
     // API 연동 시 아래 주석을 해제하고 사용하세요.
     
     final response = await http.get(
-      Uri.parse('http://34.50.32.200/api/sessions/${widget.sessionId}/summary/'),
+      Uri.parse('https://inthon-njg.darkerai.com/api/sessions/${widget.sessionId}/summary/'),
     );
 
     if (response.statusCode == 200) {
@@ -181,10 +181,8 @@ class _SummaryPageState extends State<SummaryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[900],
       appBar: AppBar(
         title: const Text('수업 요약'),
-        backgroundColor: Colors.grey[850],
       ),
       body: FutureBuilder<SummaryData>(
         future: _summaryData,
@@ -192,11 +190,11 @@ class _SummaryPageState extends State<SummaryPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+            return Center(child: Text('Error: ${snapshot.error}'));
           } else if (snapshot.hasData) {
             return SummaryView(summary: snapshot.data!);
           } else {
-            return const Center(child: Text('No data available', style: TextStyle(color: Colors.white)));
+            return const Center(child: Text('No data available'));
           }
         },
       ),
@@ -247,12 +245,12 @@ class SummaryView extends StatelessWidget {
       children: [
         Text(
           '${summary.course.name} (${summary.course.code})',
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Text(
           '${summary.course.professor} 교수님 | ${summary.date}',
-          style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+          style: TextStyle(fontSize: 16, color: Colors.grey[600]),
         ),
       ],
     );
@@ -272,14 +270,15 @@ class SummaryView extends StatelessWidget {
   Widget _buildStatCard(String title, String value) {
     return Expanded(
       child: Card(
-        color: Colors.grey[800],
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(title, style: TextStyle(fontSize: 14, color: Colors.grey[400])),
+              Text(title, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
             ],
           ),
         ),
@@ -301,7 +300,8 @@ class SummaryView extends StatelessWidget {
         if (moments.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20.0),
-            child: Center(child: Text('데이터가 없습니다.', style: TextStyle(color: Colors.grey))),
+            child: Center(
+                child: Text('데이터가 없습니다.', style: TextStyle(color: Colors.grey))),
           )
         else
           ListView.builder(
@@ -325,7 +325,6 @@ class MomentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: Colors.grey[800],
       margin: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,16 +332,26 @@ class MomentCard extends StatelessWidget {
           SizedBox(
             width: 120,
             height: 90,
-            child: Image.network(
-              moment.captureUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                return progress == null ? child : const Center(child: CircularProgressIndicator());
-              },
-              errorBuilder: (context, error, stackTrace) {
-                return const Icon(Icons.error, color: Colors.red);
-              },
-            ),
+            child: moment.captureUrl != null
+                ? Image.network(
+                    moment.captureUrl!,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, progress) {
+                      return progress == null
+                          ? child
+                          : const Center(child: CircularProgressIndicator());
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(Icons.error, color: Colors.red);
+                    },
+                  )
+                : Container(
+                    color: Colors.grey[700],
+                    child: const Center(
+                      child:
+                          Icon(Icons.image_not_supported, color: Colors.grey),
+                    ),
+                  ),
           ),
           Expanded(
             child: Padding(
@@ -352,14 +361,13 @@ class MomentCard extends StatelessWidget {
                 children: [
                   Text(
                     moment.note.isEmpty ? '내용이 없습니다.' : moment.note,
-                    style: const TextStyle(color: Colors.white),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     DateFormat('yyyy-MM-dd HH:mm:ss').format(moment.createdAt),
-                    style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
               ),

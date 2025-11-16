@@ -194,7 +194,7 @@ class _HomePageState extends State<HomePage>
   Future<void> _fetchAllCourses() async {
     try {
       final res = await http.get(
-        Uri.parse("http://34.50.32.200/api/courses/"),
+        Uri.parse("https://inthon-njg.darkerai.com/api/courses/"),
         headers: {"accept": "application/json"},
       );
       if (res.statusCode == 200) {
@@ -539,6 +539,8 @@ class _HomePageState extends State<HomePage>
           courseCode: item.courseCode,
           subjectName: item.title,
           color: item.color ?? Colors.blue,
+          startPeriod: item.start,
+          endPeriod: item.end,
           sessions: [session],
           events: const [],
         ),
