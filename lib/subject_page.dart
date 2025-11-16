@@ -119,11 +119,14 @@ class _SubjectPageState extends State<SubjectPage>
   Future<void> _loadTodaySession() async {
     try {
       final subjectCode = widget.courseCode; // 👈 courseCode를 사용해야 합니다.
-      final url = "https://inthon-njg.darkerai.com/api/courses/$subjectCode/today-session/";
+      final url =
+          "https://inthon-njg.darkerai.com/api/courses/$subjectCode/today-session/";
       final res = await http.get(
         Uri.parse(url),
         headers: {"accept": "application/json"},
       );
+
+      if (!mounted) return;
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -134,11 +137,30 @@ class _SubjectPageState extends State<SubjectPage>
 
         print("세션 ID 로드됨: $currentSessionId");
         _initWebSocket(currentSessionId);
+      } else if (res.statusCode == 404) {
+        print("세션 404, 교수님 대기 중 다이얼로그 표시");
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showProfessorNotOnlineDialog();
+          }
+        });
       } else {
         print("세션 로드 실패: ${res.statusCode}");
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showErrorSnackBar("세션 정보를 불러오는데 실패했습니다: ${res.statusCode}");
+          }
+        });
       }
     } catch (e) {
       print("오늘 세션 불러오기 오류: $e");
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showErrorSnackBar("세션 정보를 불러오는 중 오류가 발생했습니다: $e");
+          }
+        });
+      }
     }
   }
 
@@ -275,11 +297,17 @@ class _SubjectPageState extends State<SubjectPage>
           final bool teacherOnline = data['teacher_online'];
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!isActive) {
-              _showClassEndedDialog();
-            } else if (!teacherOnline) {
-              _showProfessorNotOnlineDialog();
-            }
+            if (!mounted) return;
+            // 지연을 주어 페이지 전환 애니메이션이 끝난 후 다이얼로그가 표시되도록 합니다.
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (!mounted) return;
+
+              if (!isActive) {
+                _showClassEndedDialog();
+              } else if (!teacherOnline) {
+                _showProfessorNotOnlineDialog();
+              }
+            });
           });
           break;
         // ... (case 'important', 'hard_alert'는 동일) ...

@@ -333,17 +333,40 @@ class MomentCard extends StatelessWidget {
             width: 120,
             height: 90,
             child: moment.captureUrl != null
-                ? Image.network(
-                    moment.captureUrl!,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, progress) {
-                      return progress == null
-                          ? child
-                          : const Center(child: CircularProgressIndicator());
+                ? GestureDetector(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => Dialog(
+                          child: Image.network(
+                            moment.captureUrl!,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, progress) {
+                              return progress == null
+                                  ? child
+                                  : const Center(
+                                      child: CircularProgressIndicator());
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(Icons.error,
+                                  color: Colors.red);
+                            },
+                          ),
+                        ),
+                      );
                     },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(Icons.error, color: Colors.red);
-                    },
+                    child: Image.network(
+                      moment.captureUrl!,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) {
+                        return progress == null
+                            ? child
+                            : const Center(child: CircularProgressIndicator());
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(Icons.error, color: Colors.red);
+                      },
+                    ),
                   )
                 : Container(
                     color: Colors.grey[700],
@@ -366,7 +389,8 @@ class MomentCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    DateFormat('yyyy-MM-dd HH:mm:ss').format(moment.createdAt),
+                    DateFormat('yyyy-MM-dd HH:mm:ss')
+                        .format(moment.createdAt.toLocal()),
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ],
