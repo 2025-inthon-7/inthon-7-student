@@ -11,6 +11,7 @@ import 'package:inthon_7_student/summary_page.dart';
 import 'package:intl/intl.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:inthon_7_student/model/course.dart';
 
 // Optional runtime device/session identifiers used by API calls.
 // deviceHash can be populated at app startup or via LocalDB; keep nullable to avoid undefined name errors.
@@ -53,10 +54,39 @@ class ClassSession {
 // 페이지 본체
 // ----------------------------
 
+const List<Map<String, String>> _periodTimes = [
+  {'start': '08:00', 'end': '08:50'}, // 0
+  {'start': '09:00', 'end': '10:15'}, // 1
+  {'start': '10:30', 'end': '11:45'}, // 2
+  {'start': '12:00', 'end': '13:15'}, // 3
+  {'start': '13:30', 'end': '14:45'}, // 4
+  {'start': '15:00', 'end': '16:15'}, // 5
+  {'start': '16:30', 'end': '17:45'}, // 6
+  {'start': '18:00', 'end': '18:50'}, // 7
+  {'start': '19:00', 'end': '19:50'}, // 8
+  {'start': '20:00', 'end': '20:50'}, // 9
+  {'start': '21:00', 'end': '21:50'}, // 10
+  {'start': '22:00', 'end': '22:50'}, // 11
+];
+
+String _getPeriodTimeString(int startPeriod, int endPeriod) {
+  if (startPeriod < 0 ||
+      startPeriod >= _periodTimes.length ||
+      endPeriod < 0 ||
+      endPeriod >= _periodTimes.length) {
+    return "시간 정보 없음";
+  }
+  final start = _periodTimes[startPeriod]['start']!;
+  final end = _periodTimes[endPeriod]['end']!;
+  return "$start - $end";
+}
+
 class SubjectPage extends StatefulWidget {
   final String subjectName;
   final String courseCode; // 👈 1. courseCode 받기
   final Color color;
+  final int startPeriod;
+  final int endPeriod;
   final List<ClassSession> sessions;
   final List<ClassEvent> events;
 
@@ -65,6 +95,8 @@ class SubjectPage extends StatefulWidget {
     required this.subjectName,
     required this.courseCode, // 👈 1. courseCode 받기
     required this.color,
+    required this.startPeriod,
+    required this.endPeriod,
     required this.sessions,
     required this.events,
   });
@@ -78,6 +110,8 @@ class _SubjectPageState extends State<SubjectPage>
   late List<ClassEvent> localEvents;
   late WebSocketChannel channel;
   late BuildContext _scaffoldContext;
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollDownIndicator = false;
 
   double timelineHeight = 40; // 초기 높이
   late AnimationController _fadeController;
@@ -85,7 +119,7 @@ class _SubjectPageState extends State<SubjectPage>
   Future<void> _loadTodaySession() async {
     try {
       final subjectCode = widget.courseCode; // 👈 courseCode를 사용해야 합니다.
-      final url = "http://34.50.32.200/api/courses/$subjectCode/today-session/";
+      final url = "https://inthon-njg.darkerai.com/api/courses/$subjectCode/today-session/";
       final res = await http.get(
         Uri.parse(url),
         headers: {"accept": "application/json"},
@@ -117,6 +151,8 @@ class _SubjectPageState extends State<SubjectPage>
       duration: const Duration(milliseconds: 500),
     );
 
+    _scrollController.addListener(_scrollListener);
+
     _loadTodaySession(); // <<<<<<<<<<<<<<<<<<<<<<<<
 
     Timer.periodic(Duration(seconds: 30), (t) {
@@ -129,7 +165,19 @@ class _SubjectPageState extends State<SubjectPage>
   void dispose() {
     channel.sink.close();
     _fadeController.dispose();
+    _scrollController.removeListener(_scrollListener);
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.extentAfter < 200) {
+      if (_showScrollDownIndicator) {
+        setState(() {
+          _showScrollDownIndicator = false;
+        });
+      }
+    }
   }
 
   // ----------------------------
@@ -147,9 +195,19 @@ class _SubjectPageState extends State<SubjectPage>
 
       if (success) {
         if (!mounted) return;
+        final bool shouldScroll = _scrollController.hasClients &&
+            _scrollController.position.extentAfter < 200;
+
         setState(() {
           localEvents.add(ClassEvent(type: type, timestamp: DateTime.now()));
+          if (!shouldScroll) {
+            _showScrollDownIndicator = true;
+          }
         });
+
+        if (shouldScroll) {
+          _scrollToBottom();
+        }
         _showSuccessSnackBar("서버에 전송되었습니다!");
       }
     } catch (e) {
@@ -172,7 +230,7 @@ class _SubjectPageState extends State<SubjectPage>
   // 웹소켓 관련
   // ----------------------------
   void _initWebSocket(String sessionId) {
-    final url = 'ws://34.50.32.200/ws/session/$sessionId/student/';
+    final url = 'wss://inthon-njg.darkerai.com/ws/session/$sessionId/student/';
     try {
       channel = WebSocketChannel.connect(Uri.parse(url));
 
@@ -228,7 +286,7 @@ class _SubjectPageState extends State<SubjectPage>
         case 'important':
           newEvent = ClassEvent(
             type: 'important',
-            timestamp: DateTime.parse(data['created_at']),
+            timestamp: _parseDateTimeAsIs(data['created_at']),
             message: data['note'],
             imageUrl: data['capture_url'],
           );
@@ -236,7 +294,7 @@ class _SubjectPageState extends State<SubjectPage>
         case 'hard_alert':
           newEvent = ClassEvent(
             type: 'hard_alert',
-            timestamp: DateTime.parse(data['created_at']),
+            timestamp: _parseDateTimeAsIs(data['created_at']),
             message: "많은 학생들이 어려워하고 있어요.",
             imageUrl: data['capture_url'],
           );
@@ -248,7 +306,7 @@ class _SubjectPageState extends State<SubjectPage>
           newEvent = ClassEvent(
             id: data['question_id'], // 👈 1. 이 줄이 있는지 확인
             type: 'question',
-            timestamp: DateTime.parse(data['created_at']),
+            timestamp: _parseDateTimeAsIs(data['created_at']),
             message: data['cleaned_text'],
             imageUrl: data['capture_url'], // ← 여기
           );
@@ -282,7 +340,7 @@ class _SubjectPageState extends State<SubjectPage>
             final updatedEvent = ClassEvent(
               id: questionId,
               type: 'question',
-              timestamp: DateTime.parse(data['created_at']),
+              timestamp: _parseDateTimeAsIs(data['created_at']),
               message: "",
               imageUrl: captureUrl,
             );
@@ -299,15 +357,35 @@ class _SubjectPageState extends State<SubjectPage>
 
       // 5. 💥 [수정] 새 이벤트가 있거나, 기존 이벤트가 업데이트되었으면 setState 호출
       if (newEvent != null || updateState) {
+        final bool shouldScroll = _scrollController.hasClients &&
+            _scrollController.position.extentAfter < 200;
         setState(() {
           if (newEvent != null) {
             localEvents.add(newEvent);
           }
+          if (!shouldScroll) {
+            _showScrollDownIndicator = true;
+          }
         });
+        if (shouldScroll) {
+          _scrollToBottom();
+        }
       }
     } catch (e) {
       print('웹소켓 메시지 처리 오류: $e');
     }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _showClassEndedDialog() {
@@ -369,7 +447,7 @@ class _SubjectPageState extends State<SubjectPage>
     try {
       final res = await http.get(
         Uri.parse(
-            "http://34.50.32.200/api/courses/${widget.courseCode}/previous-session/"),
+            "https://inthon-njg.darkerai.com/api/courses/${widget.courseCode}/previous-session/"),
         headers: {"accept": "application/json"},
       );
 
@@ -382,28 +460,31 @@ class _SubjectPageState extends State<SubjectPage>
           builder: (context) {
             return ShadDialog(
               title: const Text("지난 수업 목록"),
-              description: SizedBox(
-                height: 300,
-                width: double.maxFinite,
-                child: ListView.builder(
-                  itemCount: sessions.length,
-                  itemBuilder: (context, index) {
-                    final session = sessions[index];
-                    final date = session['date'];
-                    final sessionId = session['id'];
-                    return ListTile(
-                      title: Text(date),
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                SummaryPage(sessionId: sessionId),
-                          ),
-                        );
-                      },
-                    );
-                  },
+              description: Material(
+                type: MaterialType.transparency,
+                child: SizedBox(
+                  height: 300,
+                  width: double.maxFinite,
+                  child: ListView.builder(
+                    itemCount: sessions.length,
+                    itemBuilder: (context, index) {
+                      final session = sessions[index];
+                      final date = session['date'];
+                      final sessionId = session['id'];
+                      return ListTile(
+                        title: Text(date),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  SummaryPage(sessionId: sessionId),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
               actions: [
@@ -512,21 +593,8 @@ class _SubjectPageState extends State<SubjectPage>
   }
 
   Widget _buildBody(BuildContext context, List<ClassEvent> sortedEvents) {
-    final sessionWidgets = widget.sessions.map((s) {
-      final startStr = DateFormat('HH:mm').format(s.start);
-      final endStr = DateFormat('HH:mm').format(s.end);
+    final timeString = _getPeriodTimeString(widget.startPeriod, widget.endPeriod);
 
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            const Icon(Icons.schedule, size: 16),
-            const SizedBox(width: 6),
-            Text("$startStr - $endStr"),
-          ],
-        ),
-      );
-    }).toList();
     return Stack(
       children: [
         // 1) 오른쪽 아래 배경 이미지
@@ -562,7 +630,16 @@ class _SubjectPageState extends State<SubjectPage>
               // 수업 시간
               Column(
                 children: [
-                  ...sessionWidgets, // ✔ 리스트를 펼쳐서 여러 위젯으로 추가
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 16),
+                        const SizedBox(width: 6),
+                        Text(timeString),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -612,6 +689,7 @@ class _SubjectPageState extends State<SubjectPage>
                     final double containerHeight = lineHeight + 200;
 
                     return SingleChildScrollView(
+                      controller: _scrollController,
                       child: SizedBox(
                         height: containerHeight,
                         child: Stack(
@@ -747,27 +825,34 @@ class _SubjectPageState extends State<SubjectPage>
                       onPressed: _startQuestionProcess,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ShadButton(
-                      child: const Text("수업 종료"),
-                      onPressed: () async {
-                        try {
-                          await _fetchSummary();
-                          if (!mounted) return;
-                          _showSuccessSnackBar("수업 Summary가 저장되었습니다!");
-                        } catch (e) {
-                          if (!mounted) return;
-                          _showErrorSnackBar("Summary 저장 실패: $e");
-                        }
-                      },
-                    ),
-                  ),
                 ],
               ),
             ],
           ),
         ),
+        // 3) 새로운 이벤트 알림
+        Positioned(
+          bottom: 120,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _showScrollDownIndicator ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: ShadButton(
+                onPressed: _scrollToBottom,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_downward, size: 16),
+                    SizedBox(width: 8),
+                    Text("새로운 이벤트"),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        )
       ],
     );
   }
@@ -846,7 +931,7 @@ class _SubjectPageState extends State<SubjectPage>
     // 서버가 10회가 넘으면 알아서 hard_alert를 띄워줄 것입니다.
     try {
       final res = await http.post(
-        Uri.parse("http://34.50.32.200/api/questions/$questionId/like/"),
+        Uri.parse("https://inthon-njg.darkerai.com/api/questions/$questionId/like/"),
         headers: {
           "Content-Type": "application/json",
           "accept": "application/json",
@@ -1080,10 +1165,16 @@ class _SubjectPageState extends State<SubjectPage>
   }
 }
 
+DateTime _parseDateTimeAsIs(String createdAt) {
+  final withoutTimezone =
+      createdAt.replaceFirst(RegExp(r'(Z|[+-]\d{2}:\d{2})$'), '');
+  return DateTime.parse(withoutTimezone);
+}
+
 Future<bool> sendFeedback(String sessionId, String type) async {
   try {
     final res = await http.post(
-      Uri.parse("http://34.50.32.200/api/sessions/$sessionId/feedback/"),
+      Uri.parse("https://inthon-njg.darkerai.com/api/sessions/$sessionId/feedback/"),
       headers: {
         "Content-Type": "application/json",
         "accept": "application/json",
