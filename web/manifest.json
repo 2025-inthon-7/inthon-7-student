@@ -1,11 +1,11 @@
 {
-    "name": "inthon_7_student",
-    "short_name": "inthon_7_student",
+    "name": "나작교 [나만의 작은 교수님]",
+    "short_name": "나작교 [나만의 작은 교수님]",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F97316",
+    "theme_color": "#F97316",
+    "description": "나만의 작은 교수님, 나작교입니다.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
