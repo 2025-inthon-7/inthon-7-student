@@ -13,7 +13,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.9.2+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.9.2+-0175C2?logo=dart&logoColor=white)](https://dart.dev)
 
-[특징](#-주요-기능) • [시작하기](#-시작하기) • [기술 스택](#-기술-스택) • [프로젝트 구조](#-프로젝트-구조) • [개발 가이드](#-개발-가이드)
+[특징](#-주요-기능) • [시작하기](#-시작하기) • [기술 스택](#-기술-스택) • [프로젝트 구조](#-프로젝트-구조) • [개발 가이드](#-개발-가이드) • [팀원 소개](#팀원-소개)
 
 </div>
 
@@ -143,8 +143,33 @@ API 통신은 `lib/api/course_api.dart`에서 관리됩니다.
 - 시간표 동기화
 - 실시간 수업 데이터 조회
 
+
+
 <div align="center">
+
+## 팀원 소개
+
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/25a80d8b-c81c-4889-ac1d-18981739e84a" width="30" height="30" alt="민준"> <strong>김민준(팀원)</strong></td>
+    <td>Flutter 앱 개발 - 교수자용</td>
+  </tr>
+  <tr>
+    <td><img src="https://avatars.githubusercontent.com/u/223916777?s=96&v=4" width="30" height="30" alt="연오"> <strong>고연오(팀원)</strong></td>
+    <td>Flutter 앱 개발 - 학생용</td>
+  </tr>
+  <tr>
+    <td><img src="https://avatars.githubusercontent.com/u/165269047?s=96&v=4" width="30" height="30" alt="한성"> <strong>김한성(팀장)</strong></td>
+    <td>Django 서버 개발/배포, Flutter 앱 개발 - 학생용</td>
+  </tr>
+  <tr>
+    <td><img src="https://avatars.githubusercontent.com/u/133748406?s=96&v=4" width="30" height="30" alt="성진"> <strong>임성진(팀원)</strong></td>
+    <td>Django 서버 개발, AI 개발, 프롬프팅</td>
+  </tr>
+</table>
 
 **Made with ❤️ by INTHON 7 Team**
 
 </div>
+
+
