@@ -296,18 +296,15 @@ class _SubjectPageState extends State<SubjectPage>
           final bool isActive = data['is_active'];
           final bool teacherOnline = data['teacher_online'];
 
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Use a short delay to let page transitions finish
+          Future.delayed(const Duration(milliseconds: 50), () {
             if (!mounted) return;
-            // 지연을 주어 페이지 전환 애니메이션이 끝난 후 다이얼로그가 표시되도록 합니다.
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (!mounted) return;
 
-              if (!isActive) {
-                _showClassEndedDialog();
-              } else if (!teacherOnline) {
-                _showProfessorNotOnlineDialog();
-              }
-            });
+            if (!isActive) {
+              _showClassEndedDialog();
+            } else if (!teacherOnline) {
+              _showProfessorNotOnlineDialog();
+            }
           });
           break;
         // ... (case 'important', 'hard_alert'는 동일) ...
@@ -418,7 +415,7 @@ class _SubjectPageState extends State<SubjectPage>
 
   void _showClassEndedDialog() {
     showShadDialog(
-      context: context,
+      context: _scaffoldContext,
       builder: (context) => ShadDialog(
         title: const Text("수업 종료"),
         description: const Text("이미 끝난 수업입니다."),
@@ -448,7 +445,7 @@ class _SubjectPageState extends State<SubjectPage>
 
   void _showProfessorNotOnlineDialog() {
     showShadDialog(
-      context: context,
+      context: _scaffoldContext,
       builder: (context) => ShadDialog(
         title: const Text("교수님 대기 중"),
         description: const Text("교수님이 아직 입장하지 않았습니다."),
@@ -484,7 +481,7 @@ class _SubjectPageState extends State<SubjectPage>
         if (!mounted) return;
 
         showShadDialog(
-          context: context,
+          context: _scaffoldContext,
           builder: (context) {
             return ShadDialog(
               title: const Text("지난 수업 목록"),
@@ -536,7 +533,7 @@ class _SubjectPageState extends State<SubjectPage>
 
   void _showImageDialog(String imageUrl) {
     showShadDialog(
-      context: context,
+      context: _scaffoldContext,
       builder: (context) => ShadDialog(
         title: const Text("캡처된 강의자료"),
         description: Padding(
@@ -1013,7 +1010,7 @@ class _SubjectPageState extends State<SubjectPage>
       if (!mounted) return;
 
       final result = await showShadDialog<Map<String, dynamic>>(
-        context: context,
+        context: _scaffoldContext,
         builder: (context) {
           final controller = TextEditingController();
           bool noCapture = false;
@@ -1121,7 +1118,7 @@ class _SubjectPageState extends State<SubjectPage>
       if (!mounted) return;
 
       final newCleanedText = await showShadDialog<String>(
-        context: context,
+        context: _scaffoldContext,
         builder: (dialogContext) {
           final cleanController = TextEditingController(text: cleanedText);
           return ShadDialog(
